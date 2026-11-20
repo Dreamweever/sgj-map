@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>미혹의 정원 작전판</title>
+<!--
+  미혹의 정원 작전판 v0.1
+  - 신기 쟁탈전·낙화의 전장 작전판과 같은 Firebase 프로젝트·규칙을 그대로 씁니다. (rooms/mh-<방이름>)
+  - 통합 작전판(index.html)의 PAGES 목록에 mihok.html을 추가해 탭으로 씁니다.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+  --bg:#D5DCD9; --surface:#ECF0EE; --surface-2:#E0E7E4; --ink:#16252A; --muted:#536569;
+  --line:#B6C3C0; --btn:#DDE4E1; --btn-ink:#16252A; --focus:#1C7469;
+  --map-bg:#1F3136; --map-grid:rgba(234,241,239,.05); --map-block:#768789; --map-cover:#4C5D60; --map-ink:#EEF4F2;
+  --danger:#C2332A; --danger-ink:#FFFFFF; --gold:#E9C75E;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#101B1E; --surface:#172529; --surface-2:#1E2F34; --ink:#E2EBE9; --muted:#8C9FA2;
+    --line:#2B3E44; --btn:#213338; --btn-ink:#E2EBE9; --focus:#5CC2B4;
+    --map-bg:#0D171A; --map-grid:rgba(234,241,239,.04); --map-block:#5A6B6E; --map-cover:#3A494C; --map-ink:#EEF4F2;
+    --danger:#E0473C; --danger-ink:#FFFFFF; --gold:#F0D06A;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#101B1E; --surface:#172529; --surface-2:#1E2F34; --ink:#E2EBE9; --muted:#8C9FA2;
+  --line:#2B3E44; --btn:#213338; --btn-ink:#E2EBE9; --focus:#5CC2B4;
+  --map-bg:#0D171A; --map-grid:rgba(234,241,239,.04); --map-block:#5A6B6E; --map-cover:#3A494C; --map-ink:#EEF4F2;
+  --danger:#E0473C; --danger-ink:#FFFFFF; --gold:#F0D06A;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 "IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:12px 14px 40px}
+.top{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:4px 0 12px}
+h1{font-family:Hahmlet,"Nanum Myeongjo",serif;font-weight:700;font-size:1.4rem;margin:0;letter-spacing:-.01em}
+.meta{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:.82rem}
+.meta a{color:var(--ink)}
+.embedded h1{display:none}
+.sync{display:inline-flex;align-items:center;gap:6px}
+.sync i{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.sync[data-s="live"] i{background:#3FAE6A}
+.sync[data-s="off"] i{background:var(--danger)}
+.modes{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
+.modes button{border:0;background:transparent;color:var(--ink);padding:7px 16px;font:inherit;font-size:.9rem;cursor:pointer}
+.modes button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+
+.status{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;align-items:center;background:var(--surface);border-radius:14px;padding:12px 16px;margin-bottom:10px}
+.clock{font-variant-numeric:tabular-nums;font-weight:700;font-size:2.3rem;line-height:1;letter-spacing:-.02em}
+.clock-sub{font-size:.78rem;color:var(--muted);margin-top:4px}
+.relic-line{font-family:Hahmlet,serif;font-size:1.15rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.relic-line .dot{width:12px;height:12px;border-radius:3px;transform:rotate(45deg);flex:none}
+.phase-line{color:var(--muted);font-size:.86rem}
+
+.banner{display:none;margin-bottom:10px;padding:12px 16px;border-radius:12px;font-weight:600;
+  background:var(--surface-2);color:var(--ink);border-left:8px solid var(--stripe,var(--ink))}
+.banner.on{display:block}
+.banner[data-level="danger"]{background:var(--danger);color:var(--danger-ink);border-left-color:var(--danger-ink);animation:flash .9s ease-in-out 3}
+.banner[data-level="manual"]{background:var(--ink);color:var(--bg);border-left-color:var(--gold)}
+@keyframes flash{50%{filter:brightness(1.25)}}
+
+.main{display:grid;gap:14px}
+@media (min-width:920px){.main{grid-template-columns:minmax(0,1fr) 390px;align-items:start}}
+/* 넓은 화면: 지도는 화면 높이에 맞추고, 지휘 도구는 오른쪽에 여러 단으로 펼쳐 스크롤 없이 보이게 한다. */
+@media (min-width:1500px){
+  .wrap{max-width:2400px}
+  .main{grid-template-columns:min(760px, calc(100vh - 190px)) minmax(0,1fr)}
+  .mapbox{max-width:none}
+  .panel{columns:340px;column-gap:10px}
+  .panel section{break-inside:avoid}
+}
+.mapbox{background:var(--map-bg);border-radius:16px;padding:6px;max-width:720px;width:100%;margin:0 auto}
+#map{display:block;width:100%;height:auto;touch-action:none;user-select:none;-webkit-user-select:none}
+.caption{font-size:.78rem;color:var(--muted);margin:6px 4px 0}
+
+.floor rect{fill:var(--map-block)}
+.cover path{fill:none;stroke:var(--map-cover);stroke-width:3;stroke-linecap:round}
+.lbl{fill:var(--map-ink);font:600 11px "IBM Plex Sans KR",sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--map-bg);stroke-width:3px;stroke-linejoin:round}
+.lbl.small{font-size:9px;font-weight:500}
+.lbl.dim{opacity:.6}
+#stone{fill:var(--map-cover);stroke:var(--map-ink);stroke-width:2}
+#stone.open{fill:var(--gold);stroke:var(--map-ink)}
+.node-off{fill:none;stroke:var(--map-ink);stroke-dasharray:3 4;opacity:.45;stroke-width:2}
+.hitring{animation:blink .7s steps(2) infinite}
+@keyframes blink{50%{opacity:.15}}
+.spin{animation:spin 3s linear infinite;transform-box:fill-box;transform-origin:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.flow{stroke-dasharray:7 6;animation:flow .7s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-13}}
+#relic{transition:transform .55s cubic-bezier(.3,.7,.3,1)}
+#relic .gem{stroke:var(--map-bg);stroke-width:2}
+#relic .halo{fill:none;stroke-width:2.5}
+.wave{transform-box:fill-box;transform-origin:center;animation:wave 1.4s ease-out infinite}
+@keyframes wave{from{transform:scale(.4);opacity:.9}to{transform:scale(2.4);opacity:0}}
+.tok circle{stroke:var(--map-bg);stroke-width:2}
+.tok text{font:700 11px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+#map .tok,#map [data-arrow]{pointer-events:none}
+body[data-mode="cmd"] #map[data-tool="move"] .tok{pointer-events:auto;cursor:grab}
+body[data-mode="cmd"] #map[data-tool="erase"] [data-arrow]{pointer-events:auto;cursor:pointer}
+body[data-mode="cmd"] #map[data-tool="arrow"],body[data-mode="cmd"] #map[data-tool="threat"],body[data-mode="cmd"] #map[data-tool="ping"]{cursor:crosshair}
+
+.panel section{background:var(--surface);border-radius:14px;padding:12px 14px 14px;margin-bottom:10px}
+.panel h2{font-family:Hahmlet,serif;font-size:1rem;font-weight:700;margin:0 0 8px}
+/* 도구 묶음 접기: 제목을 누르면 접히고 펼쳐진다 */
+.panel section > h2{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel section > h2::after{content:"▾";font-family:"IBM Plex Sans KR",sans-serif;color:var(--muted);font-size:.9rem}
+.panel section.folded > h2{margin-bottom:0}
+.panel section.folded > h2::after{content:"▸"}
+.panel section.folded > :not(h2){display:none !important}
+/* 세로로 긴 화면: 지도는 위에 화면 높이의 절반 정도로, 지휘 도구는 그 아래 여러 단으로 */
+@media (orientation:portrait) and (min-width:700px){
+  .wrap{max-width:none}
+  .main{grid-template-columns:minmax(0,1fr)}
+  .main > div:first-child{width:min(100%, 42vh);margin:0 auto}
+  .mapbox{max-width:none}
+  .panel{columns:300px;column-gap:10px}
+  .panel section{break-inside:avoid}
+}
+.hint{font-size:.8rem;color:var(--muted);margin:6px 0 0}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.row + .row{margin-top:6px}
+.btn{font:inherit;font-size:.88rem;border:1px solid var(--line);background:var(--btn);color:var(--btn-ink);
+  border-radius:10px;padding:7px 12px;min-height:40px;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+.btn.chip{border-left:7px solid var(--c,var(--line))}
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.warn{border-color:var(--danger);color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+.altar{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.altar:first-child{border-top:0;padding-top:0}
+.altar .who{display:flex;align-items:center;gap:8px;font-weight:600}
+.altar .who i{width:12px;height:12px;border-radius:50%;flex:none}
+.altar .cnt{font-size:.8rem;color:var(--muted);font-weight:500}
+.altar .seg{grid-column:1 / -1;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.altar .seg .btn{min-height:36px;padding:4px 6px;font-size:.82rem}
+.altar .state{font-size:.85rem}
+.altar .state.down,.altar .state.hit{color:var(--danger);font-weight:700}
+
+.field{display:flex;gap:6px;margin-top:8px}
+.field input{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.field select{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.live-t{font:700 9px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central}
+.live-n{font:700 10px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central;fill:#fff}
+.slot-row{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.slot-row:first-of-type{border-top:0}
+.slot-row .opts{display:flex;gap:6px;flex-wrap:wrap}
+.slot-row select,.slot-row input[type="text"]{font:inherit;font-size:.88rem;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.slot-row input[type="text"]{width:7.5em}
+.slot-row label{display:inline-flex;align-items:center;gap:4px;font-size:.88rem}
+
+.log{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto;font-size:.86rem}
+.log li{display:grid;grid-template-columns:3.4em 1fr;gap:8px;padding:4px 0;border-top:1px solid var(--line)}
+.log li:first-child{border-top:0}
+.log time{font-variant-numeric:tabular-nums;color:var(--muted)}
+.empty{color:var(--muted);font-size:.86rem}
+
+body[data-mode="view"] .cmd-only{display:none !important}
+body[data-mode="cmd"] .view-only{display:none !important}
+
+#cal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+#cal[hidden]{display:none}
+.cal-box{background:var(--surface);color:var(--ink);border-radius:14px;padding:12px;max-width:100%}
+#cal-msg{margin:0 0 8px;font-weight:600}
+#cal-cv{display:block;max-width:100%;touch-action:none;cursor:crosshair}
+.sugg{border:2px solid var(--gold);border-radius:12px;padding:10px;margin-top:10px}
+.sugg p{margin:0 0 8px;font-weight:600}
+.vread{font-size:.85rem;margin-top:10px;line-height:1.6}
+#v-prev{display:block;margin-top:8px;border-radius:8px;background:var(--map-bg);max-width:160px}
+#v-prev[hidden]{display:none}
+.sklist{list-style:none;margin:0;padding:0;font-size:.88rem}
+.sklist .sk{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
+.sklist .sk:first-child{border-top:0}
+.sklist .sk.ready strong{color:#2E9E5B}
+.sklist .sk.stale{opacity:.5}
+.skrow{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.skrow select,.skrow input{font:inherit;font-size:.85rem;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);min-width:0}
+.skrow input[data-f="name"]{flex:1}
+.skrow input.cd{width:5.5em}
+.skst{font-size:.8rem;color:var(--muted);align-self:center}
+.btn.small{min-height:32px;padding:3px 9px;font-size:.8rem}
+.pipbtn{margin-left:auto}
+.pipbtn + .modes{margin-left:0}
+/* 지도 띄우기 창 */
+.pipbody{margin:0;background:var(--map-bg);overflow:hidden}
+.pip{display:flex;flex-direction:column;height:100vh;color:var(--map-ink);font-family:"IBM Plex Sans KR",system-ui,sans-serif}
+.pip-top{display:flex;gap:8px;align-items:baseline;padding:5px 10px;font-size:12px;white-space:nowrap;overflow:hidden}
+.pip-clock{font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.pip-sub{opacity:.7}
+.pip-head{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.pip-banner{padding:4px 10px;font-size:12px;font-weight:600;background:#2A3C42;color:var(--map-ink)}
+.pip-banner[data-level="danger"]{background:#C2332A;color:#fff}
+.pip-banner[data-level="manual"]{background:#E9C75E;color:#14201F}
+.pip-map{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:4px}
+.pip-map svg{width:100%;height:100%}
+.pip-map > .grid{width:min(100%, calc(100vh - 70px))}
+.pip-map .cell{cursor:default !important}
+#toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:.88rem;max-width:90vw;
+  opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+
+.srow{display:grid;grid-template-columns:1.4em 12px 1fr 7em;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.srow:first-child{border-top:0;padding-top:0}
+.srow .rank{font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.srow i{width:12px;height:12px;border-radius:50%}
+.srow .nm{font-weight:600}
+.srow strong{text-align:right;font-variant-numeric:tabular-nums}
+.srow input{font:inherit;font-size:.9rem;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);text-align:right;width:100%;font-variant-numeric:tabular-nums}
+.altar .who .btn.small{margin-left:4px}
+@media (orientation:portrait) and (min-width:700px){ .main > div:first-child{width:min(100%, 34vh)} .log{max-height:140px} .panel .hint{display:none} }
+@media (min-width:1500px){ .main{grid-template-columns:min(760px, calc(100vh - 250px)) minmax(0,1fr)} }
+</style>
+</head>
+<body data-mode="cmd">
+<div class="wrap">
+  <header class="top">
+    <h1>미혹의 정원 작전판</h1>
+    <div class="meta"><span id="room"></span><span class="sync" id="sync" data-s="local"><i></i><span id="sync-t">데모 모드</span></span><a id="nav" hidden>통합 작전판</a></div>
+    <button type="button" class="btn small pipbtn" id="pip-btn" data-act="pip" aria-pressed="false">지도 띄우기</button>
+    <div class="modes" role="group" aria-label="화면 모드">
+      <button type="button" data-act="mode" data-arg="cmd" aria-pressed="true">지휘</button>
+      <button type="button" data-act="mode" data-arg="view" aria-pressed="false">보기</button>
+    </div>
+  </header>
+
+  <div class="status">
+    <div>
+      <div class="clock" id="clock">15:00</div>
+      <div class="clock-sub" id="clock-sub">시작 전</div>
+    </div>
+    <div>
+      <div class="relic-line"><span id="headline"></span></div>
+      <div class="phase-line" id="phase-line"></div>
+    </div>
+  </div>
+
+  <div class="banner" id="banner" role="status" aria-live="assertive"></div>
+
+  <div class="main">
+    <div>
+      <div class="mapbox">
+        <svg id="map" viewBox="0 0 400 400" data-tool="move" role="img" aria-label="미혹의 정원 전장 개략도">
+          <defs>
+            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="var(--map-grid)" stroke-width=".8"/></pattern>
+          </defs>
+          <rect width="400" height="400" fill="var(--map-bg)"/>
+          <rect width="400" height="400" fill="url(#grid)"/>
+          <g class="floor">
+            <rect x="172" y="12" width="56" height="58" rx="6"/>
+            <rect x="12" y="172" width="44" height="56" rx="6"/>
+            <rect x="344" y="172" width="44" height="56" rx="6"/>
+            <rect x="70" y="70" width="260" height="260" rx="10"/>
+            <rect x="54" y="186" width="20" height="28"/>
+            <rect x="326" y="186" width="20" height="28"/>
+          </g>
+          <g fill="none" stroke="var(--map-cover)" stroke-width="3" opacity=".9">
+            <rect x="86" y="86" width="228" height="228" rx="6"/>
+            <path d="M172 172L186 186M228 172L214 186M172 228L186 214M228 228L214 214"/>
+          </g>
+          <g fill="var(--map-cover)" opacity=".55">
+            <rect x="106" y="106" width="66" height="66" rx="4"/><rect x="228" y="106" width="66" height="66" rx="4"/>
+            <rect x="106" y="228" width="66" height="66" rx="4"/><rect x="228" y="228" width="66" height="66" rx="4"/>
+          </g>
+          <g id="g-rooms"></g>
+          <g id="g-bosses"></g>
+          <g id="g-bases"></g>
+          <g id="g-arrows"></g>
+          <g id="g-pings"></g>
+          <g id="g-tokens"></g>
+          <g id="g-temp"></g>
+        </svg>
+      </div>
+      <p class="caption">게임 미니맵을 바탕으로 그린 개략도입니다. 바깥 세 방은 안전 지역, 입구의 원은 각 문파 본진, 안쪽 네 칸은 보스 구역이에요.</p>
+    </div>
+
+    <div class="panel">
+      <section class="cmd-only" id="auth-box" hidden></section>
+
+      <section class="cmd-only">
+        <h2>이번 판 우리 본진</h2>
+        <div class="row" id="ours-seg"></div>
+      </section>
+
+      <section>
+        <h2>보스</h2>
+        <div id="boss-list"></div>
+      </section>
+
+      <section>
+        <h2>본진과 관계</h2>
+        <div id="base-list"></div>
+      </section>
+
+      <section>
+        <h2>문파 점수</h2>
+        <div id="score-list"></div>
+      </section>
+
+      <section>
+        <h2>작전 단계</h2>
+        <div class="row" id="phase-seg"></div>
+        <div class="cmd-only">
+          <div class="row" id="tool-seg" style="margin-top:10px"></div>
+          <div class="row">
+            <button type="button" class="btn" data-act="clearArrows">이 단계 화살표 지우기</button>
+            <button type="button" class="btn" data-act="copyNext">다음 단계로 복사</button>
+          </div>
+          <p class="hint" id="tool-hint"></p>
+        </div>
+      </section>
+
+      <section class="cmd-only">
+        <h2>경보 보내기</h2>
+        <div class="row" id="quick"></div>
+        <div class="field">
+          <input type="text" id="alert-text" maxlength="60" placeholder="직접 입력" aria-label="경보 문구">
+          <button type="button" class="btn primary" data-act="sendAlert">보내기</button>
+        </div>
+      </section>
+
+      <section class="cmd-only">
+        <h2>타이머</h2>
+        <div class="row">
+          <button type="button" class="btn primary" data-act="tEnter">입장 (10분 대기)</button>
+          <button type="button" class="btn" data-act="tFight">전투 바로 시작</button>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" data-act="tNudge" data-arg="-5000" aria-label="남은 시간 5초 줄이기">남은 시간 −5초</button>
+          <button type="button" class="btn" data-act="tNudge" data-arg="5000" aria-label="남은 시간 5초 늘리기">남은 시간 +5초</button>
+          <button type="button" class="btn" data-act="tOff">끄기</button>
+        </div>
+        <div class="field">
+          <input type="text" id="sync-text" inputmode="numeric" placeholder="게임 남은 시간 (예: 12:30)" aria-label="게임 남은 시간">
+          <button type="button" class="btn" data-act="tSync">맞추기</button>
+        </div>
+        <p class="hint">대기 중이면 대기 남은 시간을, 전투 중이면 전투 남은 시간을 넣으세요.</p>
+      </section>
+
+      <section class="cmd-only">
+        <h2>매칭 설정</h2>
+        <div id="setup"></div>
+        <p class="hint">입장 후 대기 시간 동안 미니맵의 입구별 본진 색을 보고 맞춰 주세요.</p>
+      </section>
+
+      <section>
+        <h2>기록</h2>
+        <ul class="log" id="log"></ul>
+        <div class="row cmd-only" style="margin-top:10px">
+          <button type="button" class="btn warn" data-act="reset" id="reset-btn">새 판 시작</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<script>
+(() => {
+'use strict';
+
+/* ===== 설정 ===== */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB3yR9FMmgSm0dw9FoEd0jAw6FGCKvSfe8",
+  authDomain: "chamchiyeonsi.firebaseapp.com",
+  databaseURL: "https://chamchiyeonsi-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "chamchiyeonsi",
+  storageBucket: "chamchiyeonsi.firebasestorage.app",
+  messagingSenderId: "371711326877",
+  appId: "1:371711326877:web:a1cb277218a16839c77274"
+};
+const FB_VER = '10.12.2';
+
+const DURATION = 15 * 60 * 1000, PREP = 600 * 1000, ALERT_MS = 15000, PING_MS = 20000;
+const COLORS = {
+  purple:{n:'보라',h:'#7D5FE0'}, yellow:{n:'노랑',h:'#E3C443'}, orange:{n:'주황',h:'#E8793A'},
+  red:{n:'빨강',h:'#D9473F'}, blue:{n:'파랑',h:'#3D8BE0'}, green:{n:'초록',h:'#3FAE6A'}
+};
+const SLOTS = ['top','left','right'];
+const SLOT_LABEL = {top:'위쪽', left:'왼쪽', right:'오른쪽'};
+const BASE_POS = {top:[200,90], left:[90,200], right:[310,200]};
+const ROOM_C = {top:[200,41], left:[34,200], right:[366,200]};
+// 보스 구역: 미니맵에서 왼쪽 위 칸이 대장 보스(3,000점), 나머지 세 칸이 일반 보스(400점)
+const BOSSES = [['tl','갑마귀 대장',3000,[139,139]],['tr','일반 보스',400,[261,139]],['bl','일반 보스',400,[139,261]],['br','일반 보스',400,[261,261]]];
+const BOSS_ST = [['alive','대기'],['fight','교전'],['dead','처치']];
+const HP_STEPS = [100,75,50,30,10];
+const ROLES = [['king','대','대장조'],['boss','보','보스조'],['guard','수','수비조'],['raid','습','습격조'],['hunt','사','사냥조']];
+const PHASES = [['open','개전'],['mid','중반'],['late','막판']];
+const BASE_ST = [['ok','정상'],['hit','공격받음'],['down','파괴']];
+const BASE_NAME = Object.fromEntries(BASE_ST);
+const TOOLS = [['move','토큰 이동'],['arrow','이동 화살표'],['threat','위협 화살표'],['ping','집결 표시'],['erase','지우개']];
+const TOOL_HINT = {
+  move:'조 토큰을 끌어서 배치하세요. 단계마다 따로 저장됩니다.',
+  arrow:'지도 위를 끌면 아군 이동 화살표가 그려집니다.',
+  threat:'지도 위를 끌면 적 이동을 뜻하는 붉은 점선 화살표가 그려집니다.',
+  ping:'누른 자리에 20초 동안 집결 표시가 모든 화면에 뜹니다.',
+  erase:'지울 화살표를 누르세요.'
+};
+const QUICK = ['대장 보스 집결','보스 구역 인원 모으기','우리 본진 방어','적대 본진 습격','전원 후퇴'];
+const ROOM = ((location.hash || '').slice(1).match(/^[A-Za-z0-9-]{1,40}$/) || [])[0] || 'main';
+const KEY = 'mh-' + ROOM;
+
+/* ===== 상태 ===== */
+const tray = () => Object.fromEntries(ROLES.map(([k], i) => [k, {x:140 + i * 30, y:362}]));
+const emptyBoss = () => ({st:'alive', hp:100, by:''});
+function defaultState(){
+  return {
+    slots:{top:{color:'purple',name:'',active:true}, left:{color:'orange',name:'',active:true}, right:{color:'yellow',name:'',active:true}},
+    ours:'left',
+    rel:{top:'enemy', left:'enemy', right:'enemy'},
+    bases:{top:'ok', left:'ok', right:'ok'},
+    bosses:{tl:emptyBoss(), tr:emptyBoss(), bl:emptyBoss(), br:emptyBoss()},
+    scores:{top:0, left:0, right:0},
+    timer:{start:0},
+    phase:'open',
+    plans:{open:{tokens:tray(),arrows:{}}, mid:{tokens:tray(),arrows:{}}, late:{tokens:tray(),arrows:{}}},
+    alert:{text:'',at:0}, pings:{}, log:{}
+  };
+}
+const clone = v => JSON.parse(JSON.stringify(v));
+function merge(a, b){
+  if (b === undefined || b === null) return a;
+  if (typeof a !== 'object' || a === null || typeof b !== 'object') return b;
+  const o = {...a};
+  for (const k in b) o[k] = merge(a[k], b[k]);
+  return o;
+}
+function setPath(obj, path, val){
+  const ks = path.split('/'); let o = obj;
+  for (let i = 0; i < ks.length - 1; i++){
+    if (typeof o[ks[i]] !== 'object' || o[ks[i]] === null) o[ks[i]] = {};
+    o = o[ks[i]];
+  }
+  const last = ks[ks.length - 1];
+  if (val === null) delete o[last]; else o[last] = clone(val);
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let serverOffset = 0;
+const now = () => Date.now() + serverOffset;
+const LS_KEY = 'mh-state-' + ROOM;
+function loadLocal(){ try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){ return null; } }
+function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){} }
+
+let state = merge(defaultState(), FIREBASE_CONFIG ? null : loadLocal());
+let mode = 'cmd';
+try { mode = localStorage.getItem('mh-mode') || (FIREBASE_CONFIG ? 'view' : 'cmd'); } catch(e){}
+let tool = 'move';
+let fb = null, user = null, bc = null;
+
+/* ===== 저장 ===== */
+function commit(u){
+  for (const p in u) setPath(state, p, u[p]);
+  render();
+  if (fb){
+    fb.ref.update(u).catch(() => toast('저장하지 못했습니다. 지휘 권한이 있는 계정으로 로그인했는지 확인하세요.'));
+  } else {
+    saveLocal();
+    if (bc) bc.postMessage(u);
+  }
+}
+try {
+  if (!FIREBASE_CONFIG && 'BroadcastChannel' in window){
+    bc = new BroadcastChannel('mh-' + ROOM);
+    bc.onmessage = ev => { for (const p in ev.data) setPath(state, p, ev.data[p]); render(); };
+  }
+} catch(e){}
+
+/* ===== 이름·색 ===== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const colorOf = s => (COLORS[state.slots[s]?.color] || COLORS.blue).h;
+function shortName(s){
+  if (s === state.ours) return '우리';
+  const sl = state.slots[s];
+  return (sl.name || '').trim() || COLORS[sl.color].n;
+}
+const nameOf = s => shortName(s) + ' 문파';
+function inkOn(hex){
+  const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#14201F' : '#FFFFFF';
+}
+const activeSlots = () => SLOTS.filter(s => state.slots[s].active);
+const others = () => activeSlots().filter(s => s !== state.ours);
+const relOf = s => s === state.ours ? 'us' : (state.rel[s] || 'enemy');
+const bossInfo = q => BOSSES.find(b => b[0] === q);
+
+/* ===== 타이머 ===== */
+const mmss = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const parseMmss = v => {
+  const m = String(v).trim().match(/^(\d{1,2})[:\s.]?(\d{2})$/);
+  if (!m || +m[2] > 59) return null;
+  return (+m[1] * 60 + +m[2]) * 1000;
+};
+function timerInfo(){
+  const st = state.timer.start;
+  if (!st) return {kind:'idle', text:'15:00', sub:'시작 전'};
+  const prep = state.timer.prep ?? PREP, el = now() - st;
+  if (el < prep) return {kind:'prep', text:mmss(prep - el), sub:'전투 시작까지'};
+  const rem = DURATION - (el - prep);
+  if (rem <= 0) return {kind:'done', text:'0:00', sub:'종료'};
+  return {kind:'run', text:mmss(rem), sub:'남은 시간'};
+}
+function clockText(){
+  const t = timerInfo();
+  return t.kind === 'run' ? t.text : t.kind === 'prep' ? '대기' : t.kind === 'done' ? '종료' : '--:--';
+}
+const L = (text, c) => ({['log/' + uid()]: {t:now(), c:c || clockText(), text}});
+
+/* ===== 동작 ===== */
+const act = {
+  mode(arg){ mode = arg; try { localStorage.setItem('mh-mode', mode); } catch(e){} render(); },
+  ours(s){ if (state.ours !== s) commit({ours:s, ...L('우리 본진: ' + SLOT_LABEL[s])}); },
+  rel(s){
+    const v = relOf(s) === 'ally' ? 'enemy' : 'ally';
+    commit({['rel/' + s]:v, ...L(nameOf(s) + (v === 'ally' ? '와 동맹' : '와 적대'))});
+  },
+  base(arg){
+    const [s, v] = arg.split(':');
+    if (state.bases[s] === v) return;
+    commit({['bases/' + s]:v, ...L(nameOf(s) + ' 본진 ' + BASE_NAME[v])});
+  },
+  bst(arg){
+    const [q, v] = arg.split(':'), b = state.bosses[q], name = bossInfo(q)[1];
+    if (b.st === v) return;
+    const u = {['bosses/' + q + '/st']:v};
+    if (v !== 'dead') u['bosses/' + q + '/by'] = '';
+    if (v === 'alive') u['bosses/' + q + '/hp'] = 100;
+    commit({...u, ...L(name + (v === 'fight' ? ' 교전 시작' : v === 'dead' ? ' 처치' : ' 대기로 되돌림'))});
+  },
+  hp(arg){
+    const [q, v] = arg.split(':'), b = state.bosses[q];
+    if (b.hp === +v) return;
+    const u = {['bosses/' + q + '/hp']:+v};
+    if (b.st === 'alive') u['bosses/' + q + '/st'] = 'fight';
+    commit(u);
+  },
+  killer(arg){
+    const [q, s] = arg.split(':');
+    commit({['bosses/' + q + '/by']:s, ...L(bossInfo(q)[1] + ' 처치 문파: ' + nameOf(s))});
+  },
+  phase(p){ if (state.phase !== p) commit({phase:p, ...L('작전 단계: ' + Object.fromEntries(PHASES)[p])}); },
+  tool(t){ tool = t; render(); },
+  clearArrows(){ commit({['plans/' + state.phase + '/arrows']:null}); },
+  copyNext(){
+    const i = PHASES.findIndex(p => p[0] === state.phase);
+    if (i >= PHASES.length - 1){ toast('막판이 마지막 단계입니다.'); return; }
+    commit({['plans/' + PHASES[i + 1][0]]:clone(state.plans[state.phase])});
+    toast(PHASES[i + 1][1] + ' 단계로 복사했습니다.');
+  },
+  quick(i){ sendAlert(QUICK[+i]); },
+  sendAlert(){ const el = $('#alert-text'); const t = el.value.trim(); if (!t) return; sendAlert(t); el.value = ''; },
+  tEnter(){ commit({timer:{start:now(), prep:PREP}, ...L('입장, 10분 대기', '대기')}); },
+  tFight(){ commit({timer:{start:now(), prep:0}, ...L('전투 시작', '15:00')}); },
+  tNudge(d){ if (!state.timer.start) return; commit({'timer/start':state.timer.start + Number(d)}); },
+  tOff(){ commit({'timer/start':0}); },
+  tSync(){
+    const ms = parseMmss($('#sync-text').value);
+    if (ms === null){ toast('12:30처럼 분:초로 입력하세요.'); return; }
+    const t = timerInfo();
+    if (t.kind === 'prep'){
+      if (ms > PREP){ toast('대기 시간은 10:00보다 클 수 없습니다.'); return; }
+      commit({timer:{start:now(), prep:ms}, ...L('대기 시간을 ' + mmss(ms) + '에 맞춤', '대기')});
+    } else {
+      if (ms > DURATION){ toast('15:00보다 클 수 없습니다.'); return; }
+      commit({timer:{start:now() - (DURATION - ms), prep:0}, ...L('전투 시간을 ' + mmss(ms) + '에 맞춤', mmss(ms))});
+    }
+    $('#sync-text').value = '';
+  },
+  reset(){
+    const b = $('#reset-btn');
+    if (!b.dataset.armed){
+      b.dataset.armed = '1'; b.textContent = '한 번 더 누르면 초기화';
+      setTimeout(() => { delete b.dataset.armed; b.textContent = '새 판 시작'; }, 3000);
+      return;
+    }
+    delete b.dataset.armed; b.textContent = '새 판 시작';
+    commit({
+      bases:{top:'ok', left:'ok', right:'ok'}, rel:{top:'enemy', left:'enemy', right:'enemy'},
+      bosses:{tl:emptyBoss(), tr:emptyBoss(), bl:emptyBoss(), br:emptyBoss()},
+      scores:{top:0, left:0, right:0}, timer:{start:0}, alert:{text:'',at:0}, pings:null, log:null, phase:'open'
+    });
+    commit(L('새 판 시작'));
+  },
+  login(){ fbLogin(); },
+  logout(){ if (window.firebase) firebase.auth().signOut(); }
+};
+function sendAlert(text){ commit({alert:{text,at:now()}, ...L('경보: ' + text)}); }
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b || !act[b.dataset.act]) return;
+  act[b.dataset.act](b.dataset.arg);
+});
+$('#alert-text').addEventListener('keydown', e => { if (e.key === 'Enter') act.sendAlert(); });
+$('#sync-text').addEventListener('keydown', e => { if (e.key === 'Enter') act.tSync(); });
+// 점수 입력: 게임 우측 패널의 문파 점수를 옮겨 적는다
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.score){
+    const v = parseInt(String(t.value).replace(/[^0-9]/g, ''), 10) || 0;
+    commit({['scores/' + t.dataset.score]:v});
+  }
+});
+
+/* ===== 매칭 설정 ===== */
+function buildSetup(){
+  const opts = Object.entries(COLORS).map(([k, v]) => `<option value="${k}">${v.n}</option>`).join('');
+  $('#setup').innerHTML = SLOTS.map(s => `
+    <div class="slot-row" data-slot="${s}">
+      <label><input type="checkbox" data-f="active"> ${SLOT_LABEL[s]}</label>
+      <div class="opts">
+        <select data-f="color" aria-label="${SLOT_LABEL[s]} 본진 색">${opts}</select>
+        <input type="text" data-f="name" maxlength="12" placeholder="문파 이름" aria-label="${SLOT_LABEL[s]} 문파 이름">
+      </div>
+    </div>`).join('');
+  $('#setup').addEventListener('change', e => {
+    const row = e.target.closest('[data-slot]'); if (!row) return;
+    const s = row.dataset.slot, f = e.target.dataset.f;
+    if (f === 'active') commit({['slots/' + s + '/active']:e.target.checked});
+    if (f === 'color') commit({['slots/' + s + '/color']:e.target.value});
+    if (f === 'name') commit({['slots/' + s + '/name']:e.target.value.trim()});
+  });
+}
+function syncSetup(){
+  for (const s of SLOTS){
+    const row = $(`#setup [data-slot="${s}"]`), sl = state.slots[s];
+    const set = (f, prop, v) => { const el = row.querySelector(`[data-f="${f}"]`); if (el !== document.activeElement) el[prop] = v; };
+    set('active', 'checked', !!sl.active);
+    set('color', 'value', sl.color);
+    set('name', 'value', sl.name || '');
+  }
+}
+
+/* ===== 지도 ===== */
+function buildTokens(){
+  $('#g-tokens').innerHTML = ROLES.map(([k, ch, nm]) =>
+    `<g class="tok" data-role="${k}"><title>${nm}</title><circle r="11"/><text>${ch}</text></g>`).join('');
+}
+function renderMap(){
+  const ours = state.ours, plan = state.plans[state.phase] || {tokens:{}, arrows:{}};
+
+  // 안전 지역(바깥 방)
+  $('#g-rooms').innerHTML = SLOTS.map(s => {
+    const sl = state.slots[s], [cx, cy] = ROOM_C[s];
+    if (!sl.active) return `<text x="${cx}" y="${cy + 4}" class="lbl small dim">비어 있음</text>`;
+    const vertical = s !== 'top';
+    const w = vertical ? 44 : 56, h = vertical ? 56 : 58;
+    return `<rect x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" rx="6" fill="${colorOf(s)}" opacity=".45"/>
+      <text x="${cx}" y="${cy + 4}" class="lbl small">${esc(shortName(s))}</text>`;
+  }).join('');
+
+  // 보스
+  $('#g-bosses').innerHTML = BOSSES.map(([q, name, pts, [x, y]]) => {
+    const b = state.bosses[q], king = q === 'tl', r = king ? 20 : 15;
+    if (b.st === 'dead'){
+      const by = b.by && state.slots[b.by] ? shortName(b.by) : '';
+      return `<g opacity=".7"><circle cx="${x}" cy="${y}" r="${r}" fill="var(--map-bg)" stroke="#9FB3B0" stroke-width="2"/>
+        <path d="M${x - 8} ${y - 8}l16 16M${x + 8} ${y - 8}l-16 16" stroke="#9FB3B0" stroke-width="3" stroke-linecap="round"/>
+        <text x="${x}" y="${y + r + 14}" class="lbl small">${by ? '처치: ' + esc(by) : '처치됨'}</text></g>`;
+    }
+    const hpw = 40, hp = Math.max(0, Math.min(100, b.hp));
+    return `<g>
+      ${b.st === 'fight' ? `<circle class="hitring" cx="${x}" cy="${y}" r="${r + 5}" fill="none" stroke="var(--danger)" stroke-width="3"/>` : ''}
+      <circle cx="${x}" cy="${y}" r="${r}" fill="#7A2420" stroke="#E0473C" stroke-width="${king ? 3 : 2}"/>
+      <text x="${x}" y="${y + 4}" class="lbl small" style="stroke-width:0;fill:#FFE3DE">${king ? '대장' : '보스'}</text>
+      <rect x="${x - hpw / 2}" y="${y + r + 4}" width="${hpw}" height="5" rx="2" fill="#0D171A"/>
+      <rect x="${x - hpw / 2}" y="${y + r + 4}" width="${hpw * hp / 100}" height="5" rx="2" fill="${hp <= 30 ? '#F0D06A' : '#E0473C'}"/>
+      <text x="${x}" y="${y + r + 20}" class="lbl small">${hp}%</text></g>`;
+  }).join('');
+
+  // 본진
+  $('#g-bases').innerHTML = SLOTS.map(s => {
+    const sl = state.slots[s], [x, y] = BASE_POS[s];
+    if (!sl.active) return `<circle cx="${x}" cy="${y}" r="12" class="node-off"/>`;
+    const c = colorOf(s), st = state.bases[s], rel = relOf(s);
+    const ring = rel === 'us' ? 'var(--map-ink)' : rel === 'ally' ? '#3FAE6A' : 'var(--danger)';
+    const tag = rel === 'us' ? '' : rel === 'ally' ? '동맹' : '적대';
+    return `<g>
+      <circle cx="${x}" cy="${y}" r="19" fill="none" stroke="${ring}" stroke-width="2.5" ${rel === 'ally' ? 'stroke-dasharray="5 4"' : ''}/>
+      <circle cx="${x}" cy="${y}" r="13" fill="${st === 'down' ? 'var(--map-bg)' : c}" stroke="${c}" stroke-width="3"/>
+      ${st === 'hit' ? `<circle class="hitring" cx="${x}" cy="${y}" r="24" fill="none" stroke="var(--danger)" stroke-width="3"/>` : ''}
+      ${st === 'down' ? `<path d="M${x - 7} ${y - 7}l14 14M${x + 7} ${y - 7}l-14 14" stroke="var(--danger)" stroke-width="3.5" stroke-linecap="round"/>` : ''}
+      ${tag ? `<text x="${x}" y="${s === 'top' ? y + 32 : y + 34}" class="lbl small" style="fill:${ring}">${tag}</text>` : ''}</g>`;
+  }).join('');
+
+  // 화살표
+  $('#g-arrows').innerHTML = Object.entries(plan.arrows || {}).map(([id, a]) => arrowSvg(a, id)).join('');
+  renderPings();
+
+  // 조 토큰
+  const tc = colorOf(ours);
+  for (const g of document.querySelectorAll('#g-tokens .tok')){
+    const k = g.dataset.role;
+    if (drag && drag.kind === 'tok' && drag.role === k) continue;
+    const p = (plan.tokens || {})[k] || tray()[k];
+    g.setAttribute('transform', `translate(${p.x},${p.y})`);
+    g.querySelector('circle').setAttribute('fill', tc);
+    g.querySelector('text').setAttribute('fill', inkOn(tc));
+  }
+  $('#map').dataset.tool = tool;
+}
+function arrowSvg(a, id){
+  const threat = a.k === 'threat';
+  const c = threat ? 'var(--danger)' : colorOf(state.ours);
+  const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), L1 = 11;
+  const p1 = [a.x2 - L1 * Math.cos(ang - .45), a.y2 - L1 * Math.sin(ang - .45)];
+  const p2 = [a.x2 - L1 * Math.cos(ang + .45), a.y2 - L1 * Math.sin(ang + .45)];
+  const bx = a.x2 - 7 * Math.cos(ang), by = a.y2 - 7 * Math.sin(ang);
+  return `<g ${id ? `data-arrow="${id}"` : ''}>
+    <line x1="${a.x1}" y1="${a.y1}" x2="${bx}" y2="${by}" stroke="transparent" stroke-width="16"/>
+    <line x1="${a.x1}" y1="${a.y1}" x2="${bx}" y2="${by}" stroke="var(--map-bg)" stroke-width="7" stroke-linecap="round"/>
+    <line x1="${a.x1}" y1="${a.y1}" x2="${bx}" y2="${by}" stroke="${c}" stroke-width="4" stroke-linecap="round" ${threat ? 'stroke-dasharray="7 6"' : ''}/>
+    <polygon points="${a.x2},${a.y2} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]}" fill="${c}" stroke="var(--map-bg)" stroke-width="1.5"/>
+  </g>`;
+}
+let pingKey = '';
+function renderPings(){
+  const t = now();
+  const live = Object.entries(state.pings || {}).filter(([, p]) => t - p.at < PING_MS);
+  const key = live.map(([id]) => id).join(',');
+  if (key === pingKey) return;
+  pingKey = key;
+  $('#g-pings').innerHTML = live.map(([, p]) => `
+    <g transform="translate(${p.x},${p.y})">
+      <circle class="wave" r="10" fill="none" stroke="var(--gold)" stroke-width="3"/>
+      <circle r="5" fill="var(--gold)" stroke="var(--map-bg)" stroke-width="2"/>
+      <text y="-12" class="lbl small">집결</text>
+    </g>`).join('');
+}
+
+/* ===== 지도 조작 ===== */
+const svg = $('#map');
+let drag = null;
+function svgPt(e){
+  const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
+  const q = p.matrixTransform(svg.getScreenCTM().inverse());
+  return {x:Math.round(Math.max(6, Math.min(394, q.x))), y:Math.round(Math.max(6, Math.min(394, q.y)))};
+}
+svg.addEventListener('pointerdown', e => {
+  if (mode !== 'cmd') return;
+  const p = svgPt(e);
+  if (tool === 'move'){
+    const g = e.target.closest('.tok'); if (!g) return;
+    drag = {kind:'tok', role:g.dataset.role, el:g, x:p.x, y:p.y};
+  } else if (tool === 'arrow' || tool === 'threat'){
+    drag = {kind:'arrow', k:tool, x1:p.x, y1:p.y, x2:p.x, y2:p.y};
+  } else if (tool === 'ping'){
+    commit({['pings/' + uid()]:{x:p.x, y:p.y, at:now()}});
+    return;
+  } else if (tool === 'erase'){
+    const a = e.target.closest('[data-arrow]');
+    if (a) commit({['plans/' + state.phase + '/arrows/' + a.dataset.arrow]:null});
+    return;
+  } else return;
+  svg.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+svg.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = svgPt(e);
+  if (drag.kind === 'tok'){ drag.x = p.x; drag.y = p.y; drag.el.setAttribute('transform', `translate(${p.x},${p.y})`); }
+  else { drag.x2 = p.x; drag.y2 = p.y; $('#g-temp').innerHTML = arrowSvg(drag); }
+});
+function endDrag(){
+  if (!drag) return;
+  const d = drag; drag = null;
+  $('#g-temp').innerHTML = '';
+  if (d.kind === 'tok') commit({['plans/' + state.phase + '/tokens/' + d.role]:{x:d.x, y:d.y}});
+  else if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 14)
+    commit({['plans/' + state.phase + '/arrows/' + uid()]:{x1:d.x1, y1:d.y1, x2:d.x2, y2:d.y2, k:d.k}});
+}
+svg.addEventListener('pointerup', endDrag);
+svg.addEventListener('pointercancel', endDrag);
+
+/* ===== 패널 ===== */
+function chip(s, act, label, arg){
+  return `<button type="button" class="btn chip" style="--c:${colorOf(s)}" data-act="${act}" data-arg="${arg || s}">${esc(label)}</button>`;
+}
+function renderBosses(){
+  $('#boss-list').innerHTML = BOSSES.map(([q, name, pts]) => {
+    const b = state.bosses[q];
+    const stText = b.st === 'dead' ? '처치' + (b.by && state.slots[b.by] ? ' (' + nameOf(b.by) + ')' : '') : b.st === 'fight' ? '교전 ' + b.hp + '%' : '대기';
+    let h = `<div class="altar"><div class="who">${q === 'tl' ? '★ ' : ''}${esc(name)} <span class="cnt">${pts.toLocaleString()}점</span></div>
+      <div class="state ${b.st === 'fight' ? 'hit' : ''}">${esc(stText)}</div>`;
+    if (mode === 'cmd'){
+      h += `<div class="seg" style="grid-template-columns:repeat(3,1fr)">${BOSS_ST.map(([v, n]) => `<button type="button" class="btn" data-act="bst" data-arg="${q}:${v}" aria-pressed="${b.st === v}">${n}</button>`).join('')}</div>`;
+      if (b.st === 'fight') h += `<div class="seg" style="grid-template-columns:repeat(5,1fr)">${HP_STEPS.map(v => `<button type="button" class="btn" data-act="hp" data-arg="${q}:${v}" aria-pressed="${b.hp === v}">${v}%</button>`).join('')}</div>`;
+      else if (b.st === 'dead') h += `<div class="row" style="grid-column:1 / -1">${activeSlots().map(s => chip(s, 'killer', shortName(s), q + ':' + s)).join('')}</div>`;
+    }
+    return h + '</div>';
+  }).join('') + `<p class="hint">보스 점수는 처치 순간 보스 구역에 있는 문파원 수 비율로 나뉩니다.</p>`;
+}
+function renderBases(){
+  $('#base-list').innerHTML = activeSlots().map(s => {
+    const st = state.bases[s], rel = relOf(s);
+    const relBtn = rel === 'us' ? '<span class="cnt">우리</span>'
+      : mode === 'cmd' ? `<button type="button" class="btn small" data-act="rel" data-arg="${s}" style="min-height:30px">${rel === 'ally' ? '동맹 (누르면 적대)' : '적대 (누르면 동맹)'}</button>`
+      : `<span class="cnt">${rel === 'ally' ? '동맹' : '적대'}</span>`;
+    const seg = mode === 'cmd' ? `<div class="seg" style="grid-template-columns:repeat(3,1fr)">${BASE_ST.map(([v, n]) => `<button type="button" class="btn" data-act="base" data-arg="${s}:${v}" aria-pressed="${st === v}">${n}</button>`).join('')}</div>` : '';
+    return `<div class="altar"><div class="who"><i style="background:${colorOf(s)}"></i>${esc(nameOf(s))} ${relBtn}</div>
+      <div class="state ${st}">${BASE_NAME[st]}</div>${seg}</div>`;
+  }).join('') + `<p class="hint">본진은 적대 관계인 문파만 파괴할 수 있고, 파괴되면 그 문파의 강화 효과가 모두 사라지고 디버프가 걸리며 다시 생기지 않습니다.</p>`;
+}
+function renderScores(){
+  const box = $('#score-list');
+  if (box.contains(document.activeElement)) return;
+  const list = activeSlots().slice().sort((a, b) => (state.scores[b] || 0) - (state.scores[a] || 0));
+  box.innerHTML = list.map((s, i) => `<div class="srow"><span class="rank">${i + 1}</span><i style="background:${colorOf(s)}"></i>
+    <span class="nm">${esc(nameOf(s))}</span>
+    ${mode === 'cmd' ? `<input type="text" inputmode="numeric" data-score="${s}" value="${state.scores[s] || 0}" aria-label="${esc(nameOf(s))} 점수">`
+      : `<strong>${(state.scores[s] || 0).toLocaleString()}</strong>`}</div>`).join('')
+    + (mode === 'cmd' ? `<p class="hint">게임 우측 패널의 문파 점수를 옮겨 적으면 순위가 정렬됩니다.</p>` : '');
+}
+function renderPhase(){
+  $('#phase-seg').innerHTML = PHASES.map(([k, n]) =>
+    mode === 'cmd'
+      ? `<button type="button" class="btn" data-act="phase" data-arg="${k}" aria-pressed="${state.phase === k}">${n}</button>`
+      : (state.phase === k ? `<span class="btn" style="background:var(--ink);color:var(--bg);display:inline-flex;align-items:center">${n}</span>` : '')
+  ).join('');
+  $('#tool-seg').innerHTML = TOOLS.map(([k, n]) =>
+    `<button type="button" class="btn" data-act="tool" data-arg="${k}" aria-pressed="${tool === k}">${n}</button>`).join('');
+  $('#tool-hint').textContent = TOOL_HINT[tool];
+  $('#phase-line').textContent = '작전 단계: ' + Object.fromEntries(PHASES)[state.phase];
+}
+function renderLog(){
+  const items = Object.values(state.log || {}).sort((a, b) => b.t - a.t).slice(0, 60);
+  $('#log').innerHTML = items.length
+    ? items.map(i => `<li><time>${esc(i.c)}</time><span>${esc(i.text)}</span></li>`).join('')
+    : '<li class="empty" style="display:block">아직 기록이 없습니다.</li>';
+}
+function headline(){
+  const king = state.bosses.tl;
+  if (king.st === 'fight') return '갑마귀 대장 교전 중, 체력 ' + king.hp + '%';
+  if (king.st === 'dead') return '갑마귀 대장 처치됨' + (king.by && state.slots[king.by] ? ' (' + nameOf(king.by) + ')' : '');
+  const fights = BOSSES.filter(([q]) => state.bosses[q].st === 'fight').length;
+  return fights ? '일반 보스 ' + fights + '곳 교전 중' : '모든 보스 대기 중';
+}
+function bannerInfo(){
+  const t = now();
+  if (state.alert.text && t - state.alert.at < ALERT_MS) return {level:'manual', text:state.alert.text};
+  const o = state.ours;
+  if (state.bases[o] === 'hit') return {level:'danger', text:'우리 본진이 공격받고 있습니다. 파괴되면 강화 효과가 모두 사라집니다.'};
+  const king = state.bosses.tl;
+  if (king.st === 'fight' && king.hp <= 30)
+    return {level:'info', stripe:'var(--gold)', text:'갑마귀 대장 체력 ' + king.hp + '%. 처치 순간 보스 구역 인원 비율로 3,000점이 나뉘니 대장 구역으로 모이세요.'};
+  for (const [q, name] of BOSSES.slice(1)){
+    const b = state.bosses[q];
+    if (b.st === 'fight' && b.hp <= 30) return {level:'info', stripe:'var(--gold)', text:'일반 보스 체력 ' + b.hp + '%. 처치 순간 보스 구역 인원이 점수를 나눕니다.'};
+  }
+  return null;
+}
+let bannerKey = '';
+function renderBanner(){
+  const b = bannerInfo(), el = $('#banner');
+  const key = b ? b.level + b.text : '';
+  if (key === bannerKey) return;
+  bannerKey = key;
+  el.classList.toggle('on', !!b);
+  if (!b) return;
+  el.dataset.level = b.level;
+  el.style.setProperty('--stripe', b.stripe || 'var(--ink)');
+  el.textContent = b.text;
+}
+function renderClock(){ const t = timerInfo(); $('#clock').textContent = t.text; $('#clock-sub').textContent = t.sub; }
+function renderAuth(){
+  const box = $('#auth-box');
+  if (!FIREBASE_CONFIG){ box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = user
+    ? `<h2>지휘관 로그인</h2><p style="margin:0;font-size:.88rem">${esc(user.email || '')}</p>
+       <p class="hint">UID: <code>${esc(user.uid)}</code></p>
+       <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="logout">로그아웃</button></div>`
+    : `<h2>지휘관 로그인</h2><p class="hint" style="margin:0 0 8px">지휘 권한이 있는 구글 계정으로 로그인해야 변경 사항이 저장됩니다.</p>
+       <button type="button" class="btn primary" data-act="login">구글로 로그인</button>`;
+}
+function render(){
+  document.body.dataset.mode = mode;
+  for (const b of document.querySelectorAll('.modes button')) b.setAttribute('aria-pressed', String(b.dataset.arg === mode));
+  $('#room').textContent = '방: ' + ROOM;
+  $('#headline').textContent = headline();
+  $('#ours-seg').innerHTML = SLOTS.map(s => `<button type="button" class="btn chip" style="--c:${colorOf(s)}" data-act="ours" data-arg="${s}" aria-pressed="${state.ours === s}">${SLOT_LABEL[s]}</button>`).join('');
+  $('#quick').innerHTML = QUICK.map((q, i) => `<button type="button" class="btn" data-act="quick" data-arg="${i}">${q}</button>`).join('');
+  renderMap(); renderBosses(); renderBases(); renderScores(); renderPhase(); renderLog(); renderBanner(); renderClock(); renderAuth(); syncSetup(); applyFolds();
+}
+
+/* ===== 알림 ===== */
+let toastTimer = 0;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 3200);
+}
+
+/* ===== Firebase ===== */
+function loadScript(src){
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+}
+function setSync(s, text){ $('#sync').dataset.s = s; $('#sync-t').textContent = text; }
+async function initFirebase(){
+  setSync('off', '연결 중');
+  try {
+    const base = `https://cdn.jsdelivr.net/npm/firebase@${FB_VER}/`;
+    await loadScript(base + 'firebase-app-compat.js');
+    await loadScript(base + 'firebase-auth-compat.js');
+    await loadScript(base + 'firebase-database-compat.js');
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.database();
+    fb = {ref:db.ref('rooms/' + KEY)};
+    db.ref('.info/serverTimeOffset').on('value', s => { serverOffset = s.val() || 0; });
+    db.ref('.info/connected').on('value', s => setSync(s.val() ? 'live' : 'off', s.val() ? '실시간 연결됨' : '연결 끊김'));
+    fb.ref.on('value', s => { state = merge(defaultState(), s.val()); render(); });
+    firebase.auth().onAuthStateChanged(u => { user = u; renderAuth(); applyFolds(); });
+  } catch(e){
+    setSync('off', '연결 실패');
+    toast('Firebase를 불러오지 못했습니다. 설정과 네트워크를 확인하세요.');
+  }
+}
+function fbLogin(){
+  if (!window.firebase) return;
+  firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider())
+    .catch(() => toast('로그인하지 못했습니다. 승인 도메인 설정을 확인하세요.'));
+}
+
+/* ===== 도구 묶음 접기 ===== */
+const FOLD_KEY = 'fold-mh', FOLD_DEFAULT = ['매칭 설정', '문파 점수'];
+let folds = {};
+try { folds = JSON.parse(localStorage.getItem(FOLD_KEY)) || {}; } catch(e){}
+const foldKey = sec => { const h = sec.querySelector(':scope > h2'); return h ? h.textContent.replace(/\s*\(.*\)\s*$/, '').split(':')[0].trim() : ''; };
+function applyFolds(){
+  for (const sec of document.querySelectorAll('.panel section')){
+    const k = foldKey(sec); if (!k) continue;
+    const on = k in folds ? folds[k] : k === '지휘관 로그인' ? !!user : FOLD_DEFAULT.includes(k);
+    sec.classList.toggle('folded', on);
+    const h = sec.querySelector(':scope > h2');
+    h.tabIndex = 0; h.setAttribute('role', 'button'); h.setAttribute('aria-expanded', String(!on));
+  }
+}
+function toggleFold(h){
+  const sec = h.parentElement, k = foldKey(sec);
+  folds[k] = !sec.classList.contains('folded');
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch(e){}
+  applyFolds();
+}
+document.addEventListener('click', e => { const h = e.target.closest('.panel section > h2'); if (h) toggleFold(h); });
+document.addEventListener('keydown', e => {
+  const h = e.target.closest && e.target.closest('.panel section > h2');
+  if (h && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleFold(h); }
+});
+
+/* ===== 지도 띄우기 (항상 위 작은 창) ===== */
+// 크롬·엣지의 문서 PiP 창에 지도와 시계, 경보를 복사해 띄운다. 이 창은 다른 프로그램 위에 항상 떠 있다.
+// 읽기 전용이며 0.5초마다 작전판 내용을 따라간다. 통합 작전판 안에서는 맨 바깥 창의 기능을 빌려 쓴다.
+const PIP = {win:null, last:''};
+function pipApi(){
+  try { if (window.top && window.top.documentPictureInPicture) return window.top.documentPictureInPicture; } catch(e){}
+  return window.documentPictureInPicture;
+}
+const pipSource = () => document.querySelector('.mapbox') || document.querySelector('.gridwrap');
+async function openPip(){
+  if (PIP.win){ PIP.win.close(); return; }
+  const api = pipApi();
+  if (!api){ toast('이 브라우저는 지도 띄우기를 지원하지 않습니다. PC의 크롬이나 엣지 최신 버전에서 열어 주세요.'); return; }
+  const src = pipSource(), r = src.getBoundingClientRect();
+  const w = 440, h = Math.round(w * r.height / Math.max(1, r.width)) + 60;
+  let win;
+  try { win = await api.requestWindow({width:w, height:h}); }
+  catch(e){ toast('지도 창을 열지 못했습니다. 버튼을 다시 눌러 주세요.'); return; }
+  PIP.win = win; PIP.last = '';
+  for (const st of document.querySelectorAll('style, link[rel="stylesheet"]')) win.document.head.appendChild(st.cloneNode(true));
+  win.document.title = document.title;
+  win.document.body.className = 'pipbody';
+  win.document.body.dataset.mode = 'view';
+  win.document.body.innerHTML = `<div class='pip'><div class='pip-top'><span class='pip-clock'></span><span class='pip-sub'></span><span class='pip-head'></span></div><div class='pip-banner' hidden></div><div class='pip-map'></div></div>`;
+  win.addEventListener('pagehide', () => { PIP.win = null; renderPipBtn(); });
+  renderPipBtn(); syncPip();
+}
+function syncPip(){
+  if (!PIP.win) return;
+  const d = PIP.win.document, src = pipSource(); if (!src) return;
+  const html = src.innerHTML;
+  if (html !== PIP.last){ PIP.last = html; d.querySelector('.pip-map').innerHTML = html; }
+  const head = document.querySelector('#headline') || document.querySelector('#relic-text');
+  d.querySelector('.pip-clock').textContent = (document.querySelector('#clock') || {}).textContent || '';
+  d.querySelector('.pip-sub').textContent = (document.querySelector('#clock-sub') || {}).textContent || '';
+  d.querySelector('.pip-head').textContent = head ? head.textContent : '';
+  const b = document.querySelector('#banner'), pb = d.querySelector('.pip-banner'), on = b && b.classList.contains('on');
+  pb.hidden = !on;
+  if (on){ pb.textContent = b.textContent; pb.dataset.level = b.dataset.level || ''; }
+}
+function renderPipBtn(){
+  const btn = document.querySelector('#pip-btn'); if (!btn) return;
+  btn.textContent = PIP.win ? '지도 창 닫기' : '지도 띄우기';
+  btn.setAttribute('aria-pressed', String(!!PIP.win));
+}
+act.pip = openPip;
+setInterval(syncPip, 500);
+
+/* ===== 시작 ===== */
+const EMBEDDED = window.self !== window.top;
+if (EMBEDDED) document.documentElement.classList.add('embedded');
+if (FIREBASE_CONFIG && !EMBEDDED){ const nav = $('#nav'); nav.hidden = false; nav.href = 'index.html#' + ROOM; }
+buildSetup(); buildTokens(); render();
+if (FIREBASE_CONFIG) initFirebase(); else setSync('local', '데모 모드: 이 브라우저에만 저장');
+setInterval(() => { renderClock(); renderBanner(); renderPings(); }, 250);
+window.addEventListener('hashchange', () => location.reload());
+})();
+</script>
+</body>
+</html>

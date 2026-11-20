@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>차원 점령전 작전판</title>
+<!--
+  차원 점령전 작전판 v0.1
+  - 다른 작전판과 같은 Firebase 프로젝트·규칙을 그대로 씁니다. (rooms/cw-<방이름>)
+  - 진행 시간 구성은 스크립트 위쪽 SCHEDULE에서 고칠 수 있습니다.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+  --bg:#D5DCD9; --surface:#ECF0EE; --surface-2:#E0E7E4; --ink:#16252A; --muted:#536569;
+  --line:#B6C3C0; --btn:#DDE4E1; --btn-ink:#16252A; --focus:#1C7469;
+  --map-bg:#1F3136; --map-grid:rgba(234,241,239,.05); --map-block:#768789; --map-cover:#4C5D60; --map-ink:#EEF4F2;
+  --danger:#C2332A; --danger-ink:#FFFFFF; --gold:#E9C75E;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#101B1E; --surface:#172529; --surface-2:#1E2F34; --ink:#E2EBE9; --muted:#8C9FA2;
+    --line:#2B3E44; --btn:#213338; --btn-ink:#E2EBE9; --focus:#5CC2B4;
+    --map-bg:#0D171A; --map-grid:rgba(234,241,239,.04); --map-block:#5A6B6E; --map-cover:#3A494C; --map-ink:#EEF4F2;
+    --danger:#E0473C; --danger-ink:#FFFFFF; --gold:#F0D06A;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#101B1E; --surface:#172529; --surface-2:#1E2F34; --ink:#E2EBE9; --muted:#8C9FA2;
+  --line:#2B3E44; --btn:#213338; --btn-ink:#E2EBE9; --focus:#5CC2B4;
+  --map-bg:#0D171A; --map-grid:rgba(234,241,239,.04); --map-block:#5A6B6E; --map-cover:#3A494C; --map-ink:#EEF4F2;
+  --danger:#E0473C; --danger-ink:#FFFFFF; --gold:#F0D06A;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 "IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:12px 14px 40px}
+.top{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:4px 0 12px}
+h1{font-family:Hahmlet,"Nanum Myeongjo",serif;font-weight:700;font-size:1.4rem;margin:0;letter-spacing:-.01em}
+.meta{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:.82rem}
+.meta a{color:var(--ink)}
+.embedded h1{display:none}
+.sync{display:inline-flex;align-items:center;gap:6px}
+.sync i{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.sync[data-s="live"] i{background:#3FAE6A}
+.sync[data-s="off"] i{background:var(--danger)}
+.modes{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
+.modes button{border:0;background:transparent;color:var(--ink);padding:7px 16px;font:inherit;font-size:.9rem;cursor:pointer}
+.modes button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+
+.status{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;align-items:center;background:var(--surface);border-radius:14px;padding:12px 16px;margin-bottom:10px}
+.clock{font-variant-numeric:tabular-nums;font-weight:700;font-size:2.3rem;line-height:1;letter-spacing:-.02em}
+.clock-sub{font-size:.78rem;color:var(--muted);margin-top:4px}
+.relic-line{font-family:Hahmlet,serif;font-size:1.15rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.relic-line .dot{width:12px;height:12px;border-radius:3px;transform:rotate(45deg);flex:none}
+.phase-line{color:var(--muted);font-size:.86rem}
+
+.banner{display:none;margin-bottom:10px;padding:12px 16px;border-radius:12px;font-weight:600;
+  background:var(--surface-2);color:var(--ink);border-left:8px solid var(--stripe,var(--ink))}
+.banner.on{display:block}
+.banner[data-level="danger"]{background:var(--danger);color:var(--danger-ink);border-left-color:var(--danger-ink);animation:flash .9s ease-in-out 3}
+.banner[data-level="manual"]{background:var(--ink);color:var(--bg);border-left-color:var(--gold)}
+@keyframes flash{50%{filter:brightness(1.25)}}
+
+.main{display:grid;gap:14px}
+@media (min-width:920px){.main{grid-template-columns:minmax(0,1fr) 390px;align-items:start}}
+/* 넓은 화면: 지도는 화면 높이에 맞추고, 지휘 도구는 오른쪽에 여러 단으로 펼쳐 스크롤 없이 보이게 한다. */
+@media (min-width:1500px){
+  .wrap{max-width:2400px}
+  .main{grid-template-columns:min(760px, calc(100vh - 190px)) minmax(0,1fr)}
+  .mapbox{max-width:none}
+  .panel{columns:340px;column-gap:10px}
+  .panel section{break-inside:avoid}
+}
+.mapbox{background:var(--map-bg);border-radius:16px;padding:6px;max-width:720px;width:100%;margin:0 auto}
+#map{display:block;width:100%;height:auto;touch-action:none;user-select:none;-webkit-user-select:none}
+.caption{font-size:.78rem;color:var(--muted);margin:6px 4px 0}
+
+.floor rect{fill:var(--map-block)}
+.cover path{fill:none;stroke:var(--map-cover);stroke-width:3;stroke-linecap:round}
+.lbl{fill:var(--map-ink);font:600 11px "IBM Plex Sans KR",sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--map-bg);stroke-width:3px;stroke-linejoin:round}
+.lbl.small{font-size:9px;font-weight:500}
+.lbl.dim{opacity:.6}
+#stone{fill:var(--map-cover);stroke:var(--map-ink);stroke-width:2}
+#stone.open{fill:var(--gold);stroke:var(--map-ink)}
+.node-off{fill:none;stroke:var(--map-ink);stroke-dasharray:3 4;opacity:.45;stroke-width:2}
+.hitring{animation:blink .7s steps(2) infinite}
+@keyframes blink{50%{opacity:.15}}
+.spin{animation:spin 3s linear infinite;transform-box:fill-box;transform-origin:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.flow{stroke-dasharray:7 6;animation:flow .7s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-13}}
+#relic{transition:transform .55s cubic-bezier(.3,.7,.3,1)}
+#relic .gem{stroke:var(--map-bg);stroke-width:2}
+#relic .halo{fill:none;stroke-width:2.5}
+.wave{transform-box:fill-box;transform-origin:center;animation:wave 1.4s ease-out infinite}
+@keyframes wave{from{transform:scale(.4);opacity:.9}to{transform:scale(2.4);opacity:0}}
+.tok circle{stroke:var(--map-bg);stroke-width:2}
+.tok text{font:700 11px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+#map .tok,#map [data-arrow]{pointer-events:none}
+body[data-mode="cmd"] #map[data-tool="move"] .tok{pointer-events:auto;cursor:grab}
+body[data-mode="cmd"] #map[data-tool="erase"] [data-arrow]{pointer-events:auto;cursor:pointer}
+body[data-mode="cmd"] #map[data-tool="arrow"],body[data-mode="cmd"] #map[data-tool="threat"],body[data-mode="cmd"] #map[data-tool="ping"]{cursor:crosshair}
+
+.panel section{background:var(--surface);border-radius:14px;padding:12px 14px 14px;margin-bottom:10px}
+.panel h2{font-family:Hahmlet,serif;font-size:1rem;font-weight:700;margin:0 0 8px}
+/* 도구 묶음 접기: 제목을 누르면 접히고 펼쳐진다 */
+.panel section > h2{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel section > h2::after{content:"▾";font-family:"IBM Plex Sans KR",sans-serif;color:var(--muted);font-size:.9rem}
+.panel section.folded > h2{margin-bottom:0}
+.panel section.folded > h2::after{content:"▸"}
+.panel section.folded > :not(h2){display:none !important}
+/* 세로로 긴 화면: 지도는 위에 화면 높이의 절반 정도로, 지휘 도구는 그 아래 여러 단으로 */
+@media (orientation:portrait) and (min-width:700px){
+  .wrap{max-width:none}
+  .main{grid-template-columns:minmax(0,1fr)}
+  .main > div:first-child{width:min(100%, 42vh);margin:0 auto}
+  .mapbox{max-width:none}
+  .panel{columns:300px;column-gap:10px}
+  .panel section{break-inside:avoid}
+}
+.hint{font-size:.8rem;color:var(--muted);margin:6px 0 0}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.row + .row{margin-top:6px}
+.btn{font:inherit;font-size:.88rem;border:1px solid var(--line);background:var(--btn);color:var(--btn-ink);
+  border-radius:10px;padding:7px 12px;min-height:40px;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+.btn.chip{border-left:7px solid var(--c,var(--line))}
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.warn{border-color:var(--danger);color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+.altar{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.altar:first-child{border-top:0;padding-top:0}
+.altar .who{display:flex;align-items:center;gap:8px;font-weight:600}
+.altar .who i{width:12px;height:12px;border-radius:50%;flex:none}
+.altar .cnt{font-size:.8rem;color:var(--muted);font-weight:500}
+.altar .seg{grid-column:1 / -1;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.altar .seg .btn{min-height:36px;padding:4px 6px;font-size:.82rem}
+.altar .state{font-size:.85rem}
+.altar .state.down,.altar .state.hit{color:var(--danger);font-weight:700}
+
+.field{display:flex;gap:6px;margin-top:8px}
+.field input{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.field select{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.live-t{font:700 9px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central}
+.live-n{font:700 10px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central;fill:#fff}
+.slot-row{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.slot-row:first-of-type{border-top:0}
+.slot-row .opts{display:flex;gap:6px;flex-wrap:wrap}
+.slot-row select,.slot-row input[type="text"]{font:inherit;font-size:.88rem;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.slot-row input[type="text"]{width:7.5em}
+.slot-row label{display:inline-flex;align-items:center;gap:4px;font-size:.88rem}
+
+.log{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto;font-size:.86rem}
+.log li{display:grid;grid-template-columns:3.4em 1fr;gap:8px;padding:4px 0;border-top:1px solid var(--line)}
+.log li:first-child{border-top:0}
+.log time{font-variant-numeric:tabular-nums;color:var(--muted)}
+.empty{color:var(--muted);font-size:.86rem}
+
+body[data-mode="view"] .cmd-only{display:none !important}
+body[data-mode="cmd"] .view-only{display:none !important}
+
+#cal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+#cal[hidden]{display:none}
+.cal-box{background:var(--surface);color:var(--ink);border-radius:14px;padding:12px;max-width:100%}
+#cal-msg{margin:0 0 8px;font-weight:600}
+#cal-cv{display:block;max-width:100%;touch-action:none;cursor:crosshair}
+.sugg{border:2px solid var(--gold);border-radius:12px;padding:10px;margin-top:10px}
+.sugg p{margin:0 0 8px;font-weight:600}
+.vread{font-size:.85rem;margin-top:10px;line-height:1.6}
+#v-prev{display:block;margin-top:8px;border-radius:8px;background:var(--map-bg);max-width:160px}
+#v-prev[hidden]{display:none}
+.sklist{list-style:none;margin:0;padding:0;font-size:.88rem}
+.sklist .sk{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
+.sklist .sk:first-child{border-top:0}
+.sklist .sk.ready strong{color:#2E9E5B}
+.sklist .sk.stale{opacity:.5}
+.skrow{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.skrow select,.skrow input{font:inherit;font-size:.85rem;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);min-width:0}
+.skrow input[data-f="name"]{flex:1}
+.skrow input.cd{width:5.5em}
+.skst{font-size:.8rem;color:var(--muted);align-self:center}
+.btn.small{min-height:32px;padding:3px 9px;font-size:.8rem}
+.pipbtn{margin-left:auto}
+.pipbtn + .modes{margin-left:0}
+/* 지도 띄우기 창 */
+.pipbody{margin:0;background:var(--map-bg);overflow:hidden}
+.pip{display:flex;flex-direction:column;height:100vh;color:var(--map-ink);font-family:"IBM Plex Sans KR",system-ui,sans-serif}
+.pip-top{display:flex;gap:8px;align-items:baseline;padding:5px 10px;font-size:12px;white-space:nowrap;overflow:hidden}
+.pip-clock{font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.pip-sub{opacity:.7}
+.pip-head{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.pip-banner{padding:4px 10px;font-size:12px;font-weight:600;background:#2A3C42;color:var(--map-ink)}
+.pip-banner[data-level="danger"]{background:#C2332A;color:#fff}
+.pip-banner[data-level="manual"]{background:#E9C75E;color:#14201F}
+.pip-map{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:4px}
+.pip-map svg{width:100%;height:100%}
+.pip-map > .grid{width:min(100%, calc(100vh - 70px))}
+.pip-map .cell{cursor:default !important}
+#toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:.88rem;max-width:90vw;
+  opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+
+.gridwrap{background:var(--map-bg);border-radius:16px;padding:10px}
+.grid{display:grid;grid-template-columns:22px repeat(6,minmax(0,1fr));gap:5px}
+.grid .hd{font:600 .72rem "IBM Plex Sans KR",sans-serif;color:var(--map-ink);opacity:.65;display:grid;place-items:center;min-height:18px}
+.cell{position:relative;aspect-ratio:1;border-radius:6px;border:0;background:#4A5A5D;padding:0;margin:0;font:inherit;color:var(--map-ink);overflow:hidden;cursor:default}
+.cell.off{background:#22303A;opacity:.6}
+body[data-mode="cmd"] .cell:not(.off){cursor:pointer}
+body[data-mode="cmd"] .cell:not(.off):hover{outline:2px solid var(--map-ink);outline-offset:-2px}
+.cell.attack{box-shadow:inset 0 0 0 3px #F0D06A}
+.cell.defend{box-shadow:inset 0 0 0 3px #5CC2B4}
+.cell .mk{position:absolute;top:4px;left:5px;font:700 .72rem "IBM Plex Sans KR",sans-serif;padding:1px 4px;border-radius:4px;background:rgba(13,23,26,.75);color:#F0D06A}
+.cell.defend .mk{color:#7FE0D2}
+.cell.bossc{background:#6E2420}
+.cell .boss{position:absolute;inset:auto 4px 4px auto;font:700 .72rem "IBM Plex Sans KR",sans-serif;padding:1px 5px;border-radius:4px;background:#B5312A;color:#fff;animation:blink 1s steps(2) infinite}
+.cell .pt{position:absolute;left:3px;bottom:3px;display:flex;gap:2px}
+.cell .pt b{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#0D171A;color:#fff;font:700 .62rem "IBM Plex Sans KR",sans-serif;border:1.5px solid #fff}
+.srow{display:grid;grid-template-columns:1.4em 12px 1fr 7.5em;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.srow:first-child{border-top:0;padding-top:0}
+.srow .rank{font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.srow i{width:12px;height:12px;border-radius:50%}
+.srow .nm{font-weight:600;display:flex;flex-direction:column;line-height:1.3}
+.srow .nm small{font-weight:400;color:var(--muted);font-size:.78rem}
+.srow strong{text-align:right;font-variant-numeric:tabular-nums}
+.srow input{font:inherit;font-size:.9rem;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);text-align:right;width:100%;font-variant-numeric:tabular-nums}
+.prow{display:grid;grid-template-columns:26px 1fr auto auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.prow:first-child{border-top:0;padding-top:0}
+.prow .num{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.85rem}
+.prow input{font:inherit;font-size:.9rem;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);min-width:0}
+.prow .cellname{font-variant-numeric:tabular-nums;font-weight:600;font-size:.88rem}
+.srv{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin-bottom:6px}
+.srv i{width:14px;height:14px;border-radius:50%}
+.srv-in{display:flex;gap:6px;min-width:0}
+.srv select,.srv input{font:inherit;font-size:.88rem;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);min-width:0}
+.srv input{flex:1}
+@media (orientation:portrait) and (min-width:700px){ .main > div:first-child{width:min(100%, 38vh)} .log{max-height:140px} .panel .hint{display:none} }
+@media (min-width:1500px){ .main{grid-template-columns:min(760px, calc(100vh - 230px)) minmax(0,1fr)} }
+</style>
+</head>
+<body data-mode="cmd">
+<div class="wrap">
+  <header class="top">
+    <h1>차원 점령전 작전판</h1>
+    <div class="meta"><span id="room"></span><span class="sync" id="sync" data-s="local"><i></i><span id="sync-t">데모 모드</span></span><a id="nav" hidden>통합 작전판</a></div>
+    <button type="button" class="btn small pipbtn" id="pip-btn" data-act="pip" aria-pressed="false">지도 띄우기</button>
+    <div class="modes" role="group" aria-label="화면 모드">
+      <button type="button" data-act="mode" data-arg="cmd" aria-pressed="true">지휘</button>
+      <button type="button" data-act="mode" data-arg="view" aria-pressed="false">보기</button>
+    </div>
+  </header>
+
+  <div class="status">
+    <div>
+      <div class="clock" id="clock">--:--</div>
+      <div class="clock-sub" id="clock-sub">시작 전</div>
+    </div>
+    <div>
+      <div class="relic-line"><span id="headline"></span></div>
+      <div class="phase-line" id="subline"></div>
+    </div>
+  </div>
+
+  <div class="banner" id="banner" role="status" aria-live="assertive"></div>
+
+  <div class="main">
+    <div>
+      <div class="gridwrap"><div class="grid" id="grid" role="grid" aria-label="차원 점령전 타일"></div></div>
+      <p class="caption" id="caption">점령 가능한 가운데 36칸(C~H열, 3~8행)만 보여 줍니다. 점령 기간이 끝날 때마다 모든 타일의 점령 상태가 초기화돼요.</p>
+    </div>
+
+    <div class="panel">
+      <section class="cmd-only" id="auth-box" hidden></section>
+
+      <section>
+        <h2>서버 현황</h2>
+        <div id="server-list"></div>
+      </section>
+
+      <section class="cmd-only">
+        <h2>지도 도구</h2>
+        <div class="row" id="tool-seg"></div>
+        <div class="row" id="party-pick" style="margin-top:6px"></div>
+        <p class="hint" id="tool-hint"></p>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="btn" data-act="clearTiles">점령 상태 비우기</button>
+          <button type="button" class="btn" data-act="clearMarks">목표 표시 지우기</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>파티</h2>
+        <div id="party-list"></div>
+        <div class="row cmd-only" style="margin-top:8px"><button type="button" class="btn" data-act="addParty">파티 추가</button></div>
+      </section>
+
+      <section class="cmd-only">
+        <h2>진행 시간</h2>
+        <div class="row">
+          <button type="button" class="btn primary" data-act="tStart">1차 점령 지금 시작</button>
+          <button type="button" class="btn" data-act="tOff">끄기</button>
+        </div>
+        <div class="row" id="round-seg" style="margin-top:6px"></div>
+        <div class="field">
+          <input type="text" id="sync-text" inputmode="numeric" placeholder="점령 기간 남은 시간 (예: 3:36)" aria-label="점령 기간 남은 시간">
+          <button type="button" class="btn" data-act="tSync">맞추기</button>
+        </div>
+        <p class="hint">게임 화면의 "n차 점령 기간" 남은 시간을 보고, 위에서 몇 차인지 고른 뒤 맞추세요.</p>
+      </section>
+
+      <section class="cmd-only" id="vision">
+        <h2>화면 읽기 (시험판)</h2>
+        <div class="row">
+          <button type="button" class="btn primary" data-act="vConnect">게임 화면 연결</button>
+          <button type="button" class="btn" data-act="vTest">스크린샷 올리기</button>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" data-act="vCal">격자 영역 다시 지정</button>
+          <button type="button" class="btn" data-act="vStop">읽기 끄기</button>
+        </div>
+        <input type="file" id="v-file" accept="image/*" hidden>
+        <div class="vread" id="vision-read"></div>
+        <p class="hint">게임의 차원 점령전 현황 화면을 공유하거나 캡처를 올리면 타일 색을 읽어 점령 상태를 채웁니다. 이 화면에서 Ctrl+V로 캡처를 바로 붙여넣어도 돼요. 게임에서 전황 새로고침을 누르면 바뀐 내용이 다시 읽힙니다.</p>
+      </section>
+
+      <section class="cmd-only">
+        <h2>경보 보내기</h2>
+        <div class="row" id="quick"></div>
+        <div class="field">
+          <input type="text" id="alert-text" maxlength="60" placeholder="직접 입력" aria-label="경보 문구">
+          <button type="button" class="btn primary" data-act="sendAlert">보내기</button>
+        </div>
+      </section>
+
+      <section class="cmd-only">
+        <h2>설정</h2>
+        <div id="srv-setup"></div>
+        <p class="hint">게임 화면의 서버 색과 맞춰 주세요. 화면 읽기는 이 색으로 타일 주인을 구분합니다.</p>
+      </section>
+
+      <section>
+        <h2>기록</h2>
+        <ul class="log" id="log"></ul>
+        <div class="row cmd-only" style="margin-top:10px">
+          <button type="button" class="btn warn" data-act="reset" id="reset-btn">새 판 시작</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<div id="cal" hidden>
+  <div class="cal-box">
+    <p id="cal-msg"></p>
+    <canvas id="cal-cv"></canvas>
+    <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="calCancel">취소</button></div>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<script>
+(() => {
+'use strict';
+
+/* ===== 설정 ===== */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB3yR9FMmgSm0dw9FoEd0jAw6FGCKvSfe8",
+  authDomain: "chamchiyeonsi.firebaseapp.com",
+  databaseURL: "https://chamchiyeonsi-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "chamchiyeonsi",
+  storageBucket: "chamchiyeonsi.firebasestorage.app",
+  messagingSenderId: "371711326877",
+  appId: "1:371711326877:web:a1cb277218a16839c77274"
+};
+const FB_VER = '10.12.2';
+
+// 진행 순서. 게임 규칙이 바뀌면 여기 길이만 고치면 된다. (현재: 10분 점령, 2분 비점령 반복, 3차까지)
+const SCHEDULE = [
+  {k:'r1', n:'1차 점령', min:10, round:1, mult:1},
+  {k:'b1', n:'비점령', min:2},
+  {k:'r2', n:'2차 점령', min:10, round:2, mult:1.2},
+  {k:'b2', n:'비점령', min:2},
+  {k:'r3', n:'3차 점령', min:10, round:3, mult:1.5}
+];
+const ALERT_MS = 15000;
+const COLS = 'ABCDEFGHIJ'.split(''), ROWS = [1,2,3,4,5,6,7,8,9,10];
+const ACTIVE = id => { const c = COLS.indexOf(id[0]), r = +id.slice(1); return c >= 2 && c <= 7 && r >= 3 && r <= 8; };
+const COLORS = {
+  purple:{n:'보라',h:'#7D5FE0'}, yellow:{n:'노랑',h:'#E3C443'}, orange:{n:'주황',h:'#E8793A'},
+  red:{n:'빨강',h:'#D9473F'}, blue:{n:'파랑',h:'#3D8BE0'}, green:{n:'초록',h:'#3FAE6A'}
+};
+const SV = ['us','a','b'];
+const TOOLS = [['us','우리 점령'],['a','A 점령'],['b','B 점령'],['clear','비우기'],['boss','보스'],['attack','공격 목표'],['defend','수비 지점'],['party','파티 배치']];
+const TOOL_HINT = {
+  us:'우리 서버가 점령한 타일을 누르세요. 다시 누르면 비워집니다.',
+  a:'적 서버 A가 점령한 타일을 누르세요.', b:'적 서버 B가 점령한 타일을 누르세요.',
+  clear:'점령이 풀린 타일을 누르세요.',
+  boss:'보스가 나타난 타일을 누르세요. 다시 누르면 사라집니다.',
+  attack:'우리가 뺏으러 갈 타일을 누르세요. 모든 화면에 공격 목표로 표시됩니다.',
+  defend:'지켜야 할 타일을 누르세요. 모든 화면에 수비 지점으로 표시됩니다.',
+  party:'아래에서 파티를 고른 뒤, 그 파티가 맡을 타일을 누르세요.'
+};
+const QUICK = ['공격 목표로 이동','수비 지점 지원','보스 집결','점령 유지, 자리 지키기','전원 후퇴'];
+const ROOM = ((location.hash || '').slice(1).match(/^[A-Za-z0-9-]{1,40}$/) || [])[0] || 'main';
+const KEY = 'cw-' + ROOM;
+
+/* ===== 상태 ===== */
+function defaultParties(){ const o = {}; for (let i = 1; i <= 4; i++) o['p' + i] = {name:i + '파티', cell:'', order:i}; return o; }
+function defaultState(){
+  return {
+    servers:{us:{name:'우리 서버', color:'purple'}, a:{name:'적 서버 A', color:'yellow'}, b:{name:'적 서버 B', color:'orange'}},
+    tiles:{}, boss:{}, marks:{}, parties:defaultParties(),
+    scores:{us:0, a:0, b:0},
+    timer:{start:0}, resetFor:0,
+    alert:{text:'',at:0}, log:{}
+  };
+}
+const clone = v => JSON.parse(JSON.stringify(v));
+function merge(a, b){
+  if (b === undefined || b === null) return a;
+  if (typeof a !== 'object' || a === null || typeof b !== 'object') return b;
+  const o = {...a};
+  for (const k in b) o[k] = merge(a[k], b[k]);
+  return o;
+}
+function setPath(obj, path, val){
+  const ks = path.split('/'); let o = obj;
+  for (let i = 0; i < ks.length - 1; i++){
+    if (typeof o[ks[i]] !== 'object' || o[ks[i]] === null) o[ks[i]] = {};
+    o = o[ks[i]];
+  }
+  const last = ks[ks.length - 1];
+  if (val === null) delete o[last]; else o[last] = clone(val);
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let serverOffset = 0;
+const now = () => Date.now() + serverOffset;
+const LS_KEY = 'cw-state-' + ROOM;
+function loadLocal(){ try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){ return null; } }
+function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){} }
+
+let state = merge(defaultState(), FIREBASE_CONFIG ? null : loadLocal());
+let mode = 'cmd';
+try { mode = localStorage.getItem('cw-mode') || (FIREBASE_CONFIG ? 'view' : 'cmd'); } catch(e){}
+let tool = 'us', selParty = 'p1', syncRound = 1;
+let fb = null, user = null, bc = null;
+
+/* ===== 저장 ===== */
+function commit(u){
+  for (const p in u) setPath(state, p, u[p]);
+  render();
+  if (fb){
+    fb.ref.update(u).catch(() => toast('저장하지 못했습니다. 지휘 권한이 있는 계정으로 로그인했는지 확인하세요.'));
+  } else {
+    saveLocal();
+    if (bc) bc.postMessage(u);
+  }
+}
+try {
+  if (!FIREBASE_CONFIG && 'BroadcastChannel' in window){
+    bc = new BroadcastChannel('cw-' + ROOM);
+    bc.onmessage = ev => { for (const p in ev.data) setPath(state, p, ev.data[p]); render(); };
+  }
+} catch(e){}
+
+/* ===== 도우미 ===== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const svColor = s => (COLORS[(state.servers[s] || {}).color] || COLORS.blue).h;
+const svName = s => s === 'us' ? '우리' : ((state.servers[s] || {}).name || s);
+function inkOn(hex){
+  const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#14201F' : '#FFFFFF';
+}
+const partyList = () => Object.entries(state.parties || {}).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+const countTiles = s => Object.values(state.tiles || {}).filter(v => v === s).length;
+
+/* ===== 진행 시간 ===== */
+const mmss = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const parseMmss = v => {
+  const m = String(v).trim().match(/^(\d{1,2})[:\s.]?(\d{2})$/);
+  if (!m || +m[2] > 59) return null;
+  return (+m[1] * 60 + +m[2]) * 1000;
+};
+function phaseInfo(){
+  const st = state.timer.start;
+  if (!st) return {kind:'idle'};
+  let el = now() - st;
+  if (el < 0) return {kind:'idle'};
+  for (let i = 0; i < SCHEDULE.length; i++){
+    const len = SCHEDULE[i].min * 60000;
+    if (el < len) return {kind:'run', i, ph:SCHEDULE[i], rem:len - el};
+    el -= len;
+  }
+  return {kind:'done'};
+}
+function clockText(){ const p = phaseInfo(); return p.kind === 'run' ? mmss(p.rem) : p.kind === 'done' ? '종료' : '--:--'; }
+const L = (text, c) => ({['log/' + uid()]: {t:now(), c:c || clockText(), text}});
+// 점령 기간이 끝나면 모든 타일 점령 상태가 초기화되는 규칙을 따라, 지휘 화면 하나가 판을 비운다.
+function roundsEnded(){
+  const p = phaseInfo();
+  if (p.kind === 'done') return 3;
+  if (p.kind !== 'run') return 0;
+  return SCHEDULE.slice(0, p.i).filter(s => s.round).length;
+}
+function autoReset(){
+  if (mode !== 'cmd') return;
+  const r = roundsEnded();
+  if (r > (state.resetFor || 0)) commit({tiles:null, boss:null, resetFor:r, ...L(r + '차 점령 종료, 점령 상태 초기화')});
+}
+
+/* ===== 동작 ===== */
+function tapCell(id){
+  if (mode !== 'cmd' || !ACTIVE(id)) return;
+  if (SV.includes(tool)){
+    const cur = state.tiles[id];
+    commit({['tiles/' + id]:cur === tool ? null : tool, ...(cur === tool ? {} : L(id + ' ' + svName(tool) + ' 점령'))});
+  } else if (tool === 'clear'){
+    if (state.tiles[id]) commit({['tiles/' + id]:null});
+  } else if (tool === 'boss'){
+    const on = !state.boss[id];
+    commit({['boss/' + id]:on ? true : null, ...(on ? L(id + ' 보스 출현') : {})});
+  } else if (tool === 'attack' || tool === 'defend'){
+    const on = state.marks[id] !== tool;
+    commit({['marks/' + id]:on ? tool : null, ...(on ? L(id + (tool === 'attack' ? ' 공격 목표 지정' : ' 수비 지점 지정')) : {})});
+  } else if (tool === 'party'){
+    const p = state.parties[selParty]; if (!p) return;
+    const cell = p.cell === id ? '' : id;
+    commit({['parties/' + selParty + '/cell']:cell, ...(cell ? L(p.name + ' ' + cell + ' 담당') : {})});
+  }
+}
+const act = {
+  mode(arg){ mode = arg; try { localStorage.setItem('cw-mode', mode); } catch(e){} render(); },
+  tool(t){ tool = t; render(); },
+  pick(id){ selParty = id; tool = 'party'; render(); },
+  cell(id){ tapCell(id); },
+  clearTiles(){ commit({tiles:null, boss:null, ...L('점령 상태 비움')}); },
+  clearMarks(){ commit({marks:null}); },
+  addParty(){
+    const list = partyList(), order = list.reduce((m, [, p]) => Math.max(m, p.order || 0), 0) + 1;
+    commit({['parties/p' + uid()]:{name:order + '파티', cell:'', order}});
+  },
+  delParty(id){ const p = state.parties[id]; if (p) commit({['parties/' + id]:null, ...L(p.name + ' 삭제')}); },
+  round(r){ syncRound = +r; render(); },
+  tStart(){ commit({timer:{start:now()}, resetFor:0, ...L('1차 점령 시작', '10:00')}); },
+  tOff(){ commit({'timer/start':0}); },
+  tSync(){
+    const ms = parseMmss($('#sync-text').value);
+    if (ms === null){ toast('3:36처럼 분:초로 입력하세요.'); return; }
+    const idx = SCHEDULE.findIndex(s => s.round === syncRound), len = SCHEDULE[idx].min * 60000;
+    if (ms > len){ toast(SCHEDULE[idx].n + ' 기간보다 긴 시간입니다.'); return; }
+    const before = SCHEDULE.slice(0, idx).reduce((a, s) => a + s.min * 60000, 0);
+    commit({timer:{start:now() - before - (len - ms)}, resetFor:syncRound - 1, ...L(SCHEDULE[idx].n + ' 남은 시간을 ' + mmss(ms) + '에 맞춤', mmss(ms))});
+    $('#sync-text').value = '';
+  },
+  quick(i){ sendAlert(QUICK[+i]); },
+  sendAlert(){ const el = $('#alert-text'); const t = el.value.trim(); if (!t) return; sendAlert(t); el.value = ''; },
+  reset(){
+    const b = $('#reset-btn');
+    if (!b.dataset.armed){
+      b.dataset.armed = '1'; b.textContent = '한 번 더 누르면 초기화';
+      setTimeout(() => { delete b.dataset.armed; b.textContent = '새 판 시작'; }, 3000);
+      return;
+    }
+    delete b.dataset.armed; b.textContent = '새 판 시작';
+    const u = {tiles:null, boss:null, marks:null, scores:{us:0, a:0, b:0}, timer:{start:0}, resetFor:0, alert:{text:'',at:0}, log:null};
+    for (const [id] of partyList()) u['parties/' + id + '/cell'] = '';
+    commit(u);
+    commit(L('새 판 시작'));
+  },
+  login(){ fbLogin(); },
+  logout(){ if (window.firebase) firebase.auth().signOut(); }
+};
+function sendAlert(text){ commit({alert:{text,at:now()}, ...L('경보: ' + text)}); }
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b || !act[b.dataset.act]) return;
+  act[b.dataset.act](b.dataset.arg);
+});
+$('#alert-text').addEventListener('keydown', e => { if (e.key === 'Enter') act.sendAlert(); });
+$('#sync-text').addEventListener('keydown', e => { if (e.key === 'Enter') act.tSync(); });
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.score){ commit({['scores/' + t.dataset.score]:parseInt(String(t.value).replace(/[^0-9]/g, ''), 10) || 0}); }
+  if (t.dataset.pname){ const v = t.value.trim(); if (v) commit({['parties/' + t.dataset.pname + '/name']:v}); }
+  if (t.dataset.svn){ const v = t.value.trim(); if (v) commit({['servers/' + t.dataset.svn + '/name']:v}); }
+  if (t.dataset.svc){ commit({['servers/' + t.dataset.svc + '/color']:t.value}); }
+});
+
+/* ===== 그리기 ===== */
+function renderGrid(){
+  // 점령 가능한 가운데 6×6(C~H열, 3~8행)만 그린다. 칸 이름은 게임과 같다.
+  const VC = COLS.slice(2, 8), VR = ROWS.slice(2, 8);
+  let h = '<div class="hd"></div>' + VC.map(c => `<div class="hd">${c}</div>`).join('');
+  const partyAt = {};
+  for (const [id, p] of partyList()) if (p.cell) (partyAt[p.cell] = partyAt[p.cell] || []).push(p.order);
+  for (const r of VR){
+    h += `<div class="hd">${r}</div>`;
+    for (const c of VC){
+      const id = c + r, on = ACTIVE(id);
+      if (!on){ h += `<div class="cell off" aria-hidden="true"></div>`; continue; }
+      const own = state.tiles[id], mk = state.marks[id], boss = state.boss[id];
+      const bg = own ? svColor(own) : '', ink = own ? inkOn(bg) : 'var(--map-ink)';
+      const label = id + (own ? ' ' + svName(own) + ' 점령' : ' 빈 타일') + (boss ? ', 보스' : '') + (mk ? (mk === 'attack' ? ', 공격 목표' : ', 수비 지점') : '');
+      h += `<button type="button" class="cell ${own ? 'own' : ''} ${boss && !own ? 'bossc' : ''} ${mk || ''}" data-act="cell" data-arg="${id}" style="${own ? `background:${bg};color:${ink}` : ''}" aria-label="${label}">
+        ${mk ? `<span class="mk">${mk === 'attack' ? '공격' : '수비'}</span>` : ''}
+        ${boss ? `<span class="boss">보스</span>` : ''}
+        ${partyAt[id] ? `<span class="pt">${partyAt[id].map(n => `<b>${n}</b>`).join('')}</span>` : ''}
+      </button>`;
+    }
+  }
+  $('#grid').innerHTML = h;
+  $('#grid').dataset.tool = tool;
+}
+function renderServers(){
+  const box = $('#server-list');
+  if (box.contains(document.activeElement)) return;
+  const list = SV.slice().sort((a, b) => (state.scores[b] || 0) - (state.scores[a] || 0));
+  box.innerHTML = list.map((s, i) => `<div class="srow"><span class="rank">${i + 1}</span><i style="background:${svColor(s)}"></i>
+    <span class="nm">${esc(s === 'us' ? (state.servers.us.name || '우리 서버') + ' (우리)' : svName(s))}<small>${countTiles(s)}칸 점령</small></span>
+    ${mode === 'cmd' ? `<input type="text" inputmode="numeric" data-score="${s}" value="${state.scores[s] || 0}" aria-label="${esc(svName(s))} 점수">`
+      : `<strong>${(state.scores[s] || 0).toLocaleString()}</strong>`}</div>`).join('')
+    + (mode === 'cmd' ? `<p class="hint">점수는 게임 우측 위 순위의 점수를 옮겨 적으세요. 점령 칸 수는 지도에서 자동으로 셉니다.</p>` : '');
+}
+function renderTools(){
+  $('#tool-seg').innerHTML = TOOLS.map(([k, n]) => {
+    const sw = SV.includes(k) ? `style="border-left:7px solid ${svColor(k)}"` : '';
+    return `<button type="button" class="btn" ${sw} data-act="tool" data-arg="${k}" aria-pressed="${tool === k}">${n}</button>`;
+  }).join('');
+  $('#party-pick').innerHTML = tool === 'party' ? partyList().map(([id, p]) =>
+    `<button type="button" class="btn small" data-act="pick" data-arg="${id}" aria-pressed="${selParty === id}">${esc(p.name)}</button>`).join('') : '';
+  $('#tool-hint').textContent = TOOL_HINT[tool];
+}
+function renderParties(){
+  const box = $('#party-list');
+  if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+  const list = partyList();
+  box.innerHTML = list.map(([id, p]) => mode === 'cmd'
+    ? `<div class="prow"><span class="num" style="background:${svColor('us')};color:${inkOn(svColor('us'))}">${p.order}</span>
+        <input type="text" data-pname="${id}" value="${esc(p.name)}" maxlength="16" aria-label="파티 이름">
+        <span class="cellname">${p.cell || '미배치'}</span>
+        <button type="button" class="btn small" data-act="delParty" data-arg="${id}" aria-label="${esc(p.name)} 삭제">삭제</button></div>`
+    : `<div class="prow"><span class="num" style="background:${svColor('us')};color:${inkOn(svColor('us'))}">${p.order}</span><span>${esc(p.name)}</span><span class="cellname">${p.cell || '미배치'}</span><span></span></div>`
+  ).join('') || '<p class="empty">파티가 없습니다.</p>';
+}
+function renderRoundSeg(){
+  $('#round-seg').innerHTML = [1,2,3].map(r => `<button type="button" class="btn small" data-act="round" data-arg="${r}" aria-pressed="${syncRound === r}">${r}차</button>`).join('');
+}
+function renderSrvSetup(){
+  const box = $('#srv-setup');
+  if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+  const copts = sel => Object.entries(COLORS).map(([k, v]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${v.n}</option>`).join('');
+  box.innerHTML = SV.map(s => `<div class="srv"><i style="background:${svColor(s)}"></i><div class="srv-in">
+    <select data-svc="${s}" aria-label="${s === 'us' ? '우리 서버' : '적 서버'} 색">${copts(state.servers[s].color)}</select>
+    <input type="text" data-svn="${s}" value="${esc(state.servers[s].name)}" maxlength="16" aria-label="${s === 'us' ? '우리 서버' : '적 서버'} 이름"></div></div>`).join('');
+}
+function renderLog(){
+  const items = Object.values(state.log || {}).sort((a, b) => b.t - a.t).slice(0, 60);
+  $('#log').innerHTML = items.length
+    ? items.map(i => `<li><time>${esc(i.c)}</time><span>${esc(i.text)}</span></li>`).join('')
+    : '<li class="empty" style="display:block">아직 기록이 없습니다.</li>';
+}
+function renderStatus(){
+  const p = phaseInfo();
+  if (p.kind === 'run'){
+    $('#clock').textContent = mmss(p.rem);
+    $('#clock-sub').textContent = p.ph.n + (p.ph.mult && p.ph.mult > 1 ? ' (점수 ×' + p.ph.mult + ')' : '');
+  } else { $('#clock').textContent = p.kind === 'done' ? '종료' : '--:--'; $('#clock-sub').textContent = p.kind === 'done' ? '모든 점령 기간 종료' : '시작 전'; }
+  $('#headline').textContent = '우리 ' + countTiles('us') + '칸, ' + svName('a') + ' ' + countTiles('a') + '칸, ' + svName('b') + ' ' + countTiles('b') + '칸';
+  const bosses = Object.keys(state.boss || {});
+  const atk = Object.entries(state.marks || {}).filter(([, v]) => v === 'attack').map(([k]) => k);
+  $('#subline').textContent = [bosses.length ? '보스: ' + bosses.join(', ') : '', atk.length ? '공격 목표: ' + atk.join(', ') : ''].filter(Boolean).join('   ') || '보스와 공격 목표가 표시되면 여기에 나옵니다';
+}
+function bannerInfo(){
+  const t = now();
+  if (state.alert.text && t - state.alert.at < ALERT_MS) return {level:'manual', text:state.alert.text};
+  const p = phaseInfo();
+  if (p.kind === 'run' && !p.ph.round) return {level:'info', stripe:'var(--muted)', text:'비점령 시간입니다. ' + mmss(p.rem) + ' 뒤 다음 점령이 시작되니 공격 목표와 담당 타일을 확인하세요.'};
+  if (p.kind === 'run' && p.rem <= 60000) return {level:'info', stripe:'var(--gold)', text:p.ph.n + ' 종료 1분 전. 점령한 타일을 끝까지 지키세요. 끝나면 모든 타일이 초기화됩니다.'};
+  const bosses = Object.keys(state.boss || {});
+  if (bosses.length) return {level:'info', stripe:'#E0473C', text:'보스 출현: ' + bosses.join(', ') + '. 처치하면 서버 점수가 크게 오릅니다.'};
+  return null;
+}
+let bannerKey = '';
+function renderBanner(){
+  const b = bannerInfo(), el = $('#banner');
+  const key = b ? b.level + b.text : '';
+  if (key === bannerKey) return;
+  bannerKey = key;
+  el.classList.toggle('on', !!b);
+  if (!b) return;
+  el.dataset.level = b.level;
+  el.style.setProperty('--stripe', b.stripe || 'var(--ink)');
+  el.textContent = b.text;
+}
+function renderAuth(){
+  const box = $('#auth-box');
+  if (!FIREBASE_CONFIG){ box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = user
+    ? `<h2>지휘관 로그인</h2><p style="margin:0;font-size:.88rem">${esc(user.email || '')}</p>
+       <p class="hint">UID: <code>${esc(user.uid)}</code></p>
+       <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="logout">로그아웃</button></div>`
+    : `<h2>지휘관 로그인</h2><p class="hint" style="margin:0 0 8px">지휘 권한이 있는 구글 계정으로 로그인해야 변경 사항이 저장됩니다.</p>
+       <button type="button" class="btn primary" data-act="login">구글로 로그인</button>`;
+}
+function render(){
+  document.body.dataset.mode = mode;
+  for (const b of document.querySelectorAll('.modes button')) b.setAttribute('aria-pressed', String(b.dataset.arg === mode));
+  $('#room').textContent = '방: ' + ROOM;
+  $('#quick').innerHTML = QUICK.map((q, i) => `<button type="button" class="btn" data-act="quick" data-arg="${i}">${q}</button>`).join('');
+  renderGrid(); renderServers(); renderTools(); renderParties(); renderRoundSeg(); renderSrvSetup(); renderLog(); renderStatus(); renderBanner(); renderAuth(); renderVision(); applyFolds();
+}
+
+/* ===== 알림 ===== */
+let toastTimer = 0;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 3200);
+}
+
+/* ===== 화면 읽기 (시험판) ===== */
+// 현황 화면의 10×10 격자 영역을 한 번 지정해 두면, 가운데 36칸의 색을 읽어 서버별 점령 상태와 보스 칸을 채운다.
+const VISION = {src:null, stream:null, timer:0, cal:null, hist:[], last:'', html:''};
+try { VISION.cal = JSON.parse(localStorage.getItem('cw-cal')); } catch(e){}
+const vcan = document.createElement('canvas');
+const vctx = vcan.getContext('2d', {willReadFrequently:true});
+const isVideo = () => VISION.src instanceof HTMLVideoElement;
+function srcSize(){ const s = VISION.src; return isVideo() ? [s.videoWidth, s.videoHeight] : [s.naturalWidth, s.naturalHeight]; }
+function rgb2hsv(r, g, b){
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+  let h = 0;
+  if (d){ h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
+  return [h, mx ? d / mx : 0, mx];
+}
+function hueToColor(h){
+  if (h < 12 || h >= 330) return 'red';
+  if (h < 35) return 'orange';
+  if (h < 75) return 'yellow';
+  if (h < 170) return 'green';
+  if (h < 235) return 'blue';
+  return 'purple';
+}
+function readGrid(){
+  const [W, H] = srcSize(), r = VISION.cal;
+  const x = Math.round(r[0] * W), y = Math.round(r[1] * H), w = Math.max(10, Math.round(r[2] * W)), h = Math.max(10, Math.round(r[3] * H));
+  vcan.width = w; vcan.height = h;
+  vctx.drawImage(VISION.src, x, y, w, h, 0, 0, w, h);
+  const d = vctx.getImageData(0, 0, w, h).data, cw = w / 10, ch = h / 10;
+  const out = {tiles:{}, boss:{}};
+  for (const rr of ROWS) for (const c of COLS){
+    const id = c + rr; if (!ACTIVE(id)) continue;
+    const ci = COLS.indexOf(c), ri = rr - 1;
+    let n = 0, sr = 0, sg = 0, sb = 0;
+    for (let yy = Math.round((ri + .25) * ch); yy < (ri + .75) * ch; yy++) for (let xx = Math.round((ci + .25) * cw); xx < (ci + .75) * cw; xx++){
+      const i = (yy * w + xx) * 4; sr += d[i]; sg += d[i + 1]; sb += d[i + 2]; n++;
+    }
+    if (!n) continue;
+    const [hh, ss, vv] = rgb2hsv(sr / n, sg / n, sb / n);
+    if (ss > .3 && vv > .5){
+      const col = hueToColor(hh), owner = SV.find(s => state.servers[s].color === col);
+      if (owner) out.tiles[id] = owner;
+    } else if ((hh < 20 || hh > 340) && ss > .15 && vv > .5) out.boss[id] = true;
+  }
+  return out;
+}
+function vTick(){
+  if (!VISION.src || !VISION.cal) return;
+  if (isVideo() && VISION.src.readyState < 2) return;
+  let g; try { g = readGrid(); } catch(e){ return; }
+  const key = JSON.stringify(g);
+  VISION.hist.push(key); if (VISION.hist.length > 2) VISION.hist.shift();
+  const stableNow = !isVideo() || (VISION.hist.length === 2 && VISION.hist[0] === VISION.hist[1]);
+  if (stableNow && key !== VISION.last){
+    VISION.last = key;
+    VISION.read = g;
+    if (mode === 'cmd'){
+      const same = JSON.stringify(state.tiles || {}) === JSON.stringify(g.tiles) && JSON.stringify(state.boss || {}) === JSON.stringify(g.boss);
+      if (!same) commit({tiles:g.tiles, boss:g.boss, ...L('화면 읽기: 우리 ' + Object.values(g.tiles).filter(v => v === 'us').length + '칸, ' + svName('a') + ' ' + Object.values(g.tiles).filter(v => v === 'a').length + '칸, ' + svName('b') + ' ' + Object.values(g.tiles).filter(v => v === 'b').length + '칸')});
+    }
+  }
+  renderVision();
+}
+function vStopAll(){
+  clearInterval(VISION.timer);
+  if (VISION.stream) VISION.stream.getTracks().forEach(t => t.stop());
+  VISION.stream = null; VISION.src = null; VISION.hist = []; VISION.last = ''; renderVision();
+}
+function vUse(src, stream){
+  vStopAll();
+  VISION.src = src; VISION.stream = stream || null;
+  VISION.timer = setInterval(vTick, isVideo() ? 1500 : 60000);
+  if (!VISION.cal) openCal(); else { vTick(); renderVision(); }
+}
+function openCal(){
+  if (!VISION.src) return;
+  const ov = $('#cal'), cv = $('#cal-cv'), ctx = cv.getContext('2d');
+  const [W, H] = srcSize();
+  if (!W || !H){ toast('화면을 아직 받지 못했습니다. 잠시 후 다시 눌러 주세요.'); return; }
+  const sc = Math.min((window.innerWidth - 56) / W, (window.innerHeight - 150) / H, 1.5);
+  cv.width = Math.round(W * sc); cv.height = Math.round(H * sc);
+  ctx.drawImage(VISION.src, 0, 0, cv.width, cv.height);
+  const frame = ctx.getImageData(0, 0, cv.width, cv.height);
+  let st = null;
+  const pos = e => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * cv.width / b.width, (e.clientY - b.top) * cv.height / b.height]; };
+  const rect = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])];
+  const draw = r => {
+    ctx.putImageData(frame, 0, 0);
+    if (!r) return;
+    ctx.strokeStyle = '#F0D06A'; ctx.lineWidth = 2; ctx.strokeRect(r[0], r[1], r[2], r[3]);
+    ctx.lineWidth = .7;
+    for (let i = 1; i < 10; i++){
+      ctx.beginPath(); ctx.moveTo(r[0] + r[2] * i / 10, r[1]); ctx.lineTo(r[0] + r[2] * i / 10, r[1] + r[3]); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(r[0], r[1] + r[3] * i / 10); ctx.lineTo(r[0] + r[2], r[1] + r[3] * i / 10); ctx.stroke();
+    }
+  };
+  $('#cal-msg').textContent = 'A1 칸의 왼쪽 위 모서리부터 J10 칸의 오른쪽 아래 모서리까지, 타일 격자만 꼭 맞게 감싸 주세요. 노란 선이 칸 경계와 맞아야 합니다.';
+  ov.hidden = false;
+  cv.onpointerdown = e => { st = pos(e); cv.setPointerCapture(e.pointerId); };
+  cv.onpointermove = e => { if (st) draw(rect(st, pos(e))); };
+  cv.onpointerup = e => {
+    if (!st) return;
+    const r = rect(st, pos(e)); st = null;
+    if (r[2] < 40 || r[3] < 40){ draw(); return; }
+    VISION.cal = [r[0] / cv.width, r[1] / cv.height, r[2] / cv.width, r[3] / cv.height];
+    try { localStorage.setItem('cw-cal', JSON.stringify(VISION.cal)); } catch(err){}
+    ov.hidden = true; VISION.hist = []; VISION.last = ''; vTick(); renderVision();
+    toast('격자 영역을 저장했습니다.');
+  };
+}
+function renderVision(){
+  const on = !!VISION.src;
+  let h = '<div>상태: ' + (!on ? '꺼짐' : isVideo() ? '게임 화면 연결됨' : '스크린샷 읽음') + (on && !VISION.cal ? ', 격자 영역 지정 필요' : '') + '</div>';
+  if (on && VISION.cal && VISION.read){
+    const t = VISION.read.tiles;
+    h += '<div>읽은 결과: 우리 ' + Object.values(t).filter(v => v === 'us').length + '칸, ' + esc(svName('a')) + ' ' + Object.values(t).filter(v => v === 'a').length + '칸, ' + esc(svName('b')) + ' ' + Object.values(t).filter(v => v === 'b').length + '칸, 보스 ' + Object.keys(VISION.read.boss).length + '곳</div>';
+  }
+  if (h !== VISION.html){ VISION.html = h; $('#vision-read').innerHTML = h; }
+}
+function useImageFile(f){
+  const img = new Image();
+  img.onload = () => vUse(img);
+  img.src = URL.createObjectURL(f);
+}
+Object.assign(act, {
+  vConnect: async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({video:{frameRate:2}, audio:false});
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.srcObject = stream;
+      await v.play();
+      stream.getVideoTracks()[0].addEventListener('ended', vStopAll);
+      vUse(v, stream);
+    } catch(e){
+      toast('화면 공유를 시작하지 못했습니다. 이 미리보기에서는 막혀 있을 수 있으니 직접 올린 주소에서 열거나 스크린샷을 올려 보세요.');
+    }
+  },
+  vTest(){ $('#v-file').click(); },
+  vCal(){ if (!VISION.src){ toast('먼저 게임 화면을 연결하거나 스크린샷을 올려 주세요.'); return; } openCal(); },
+  vStop(){ vStopAll(); },
+  calCancel(){ $('#cal').hidden = true; }
+});
+$('#v-file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) useImageFile(f); });
+// 캡처를 Ctrl+V로 붙여넣기
+document.addEventListener('paste', e => {
+  if (mode !== 'cmd') return;
+  const item = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith('image/'));
+  if (!item) return;
+  e.preventDefault();
+  useImageFile(item.getAsFile());
+  toast('붙여넣은 캡처를 읽었습니다.');
+});
+
+/* ===== Firebase ===== */
+function loadScript(src){
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+}
+function setSync(s, text){ $('#sync').dataset.s = s; $('#sync-t').textContent = text; }
+async function initFirebase(){
+  setSync('off', '연결 중');
+  try {
+    const base = `https://cdn.jsdelivr.net/npm/firebase@${FB_VER}/`;
+    await loadScript(base + 'firebase-app-compat.js');
+    await loadScript(base + 'firebase-auth-compat.js');
+    await loadScript(base + 'firebase-database-compat.js');
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.database();
+    fb = {ref:db.ref('rooms/' + KEY)};
+    db.ref('.info/serverTimeOffset').on('value', s => { serverOffset = s.val() || 0; });
+    db.ref('.info/connected').on('value', s => setSync(s.val() ? 'live' : 'off', s.val() ? '실시간 연결됨' : '연결 끊김'));
+    fb.ref.on('value', s => { state = merge(defaultState(), s.val()); render(); });
+    firebase.auth().onAuthStateChanged(u => { user = u; renderAuth(); applyFolds(); });
+  } catch(e){
+    setSync('off', '연결 실패');
+    toast('Firebase를 불러오지 못했습니다. 설정과 네트워크를 확인하세요.');
+  }
+}
+function fbLogin(){
+  if (!window.firebase) return;
+  firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider())
+    .catch(() => toast('로그인하지 못했습니다. 승인 도메인 설정을 확인하세요.'));
+}
+
+/* ===== 도구 묶음 접기 ===== */
+const FOLD_KEY = 'fold-cw', FOLD_DEFAULT = ['설정', '화면 읽기'];
+let folds = {};
+try { folds = JSON.parse(localStorage.getItem(FOLD_KEY)) || {}; } catch(e){}
+const foldKey = sec => { const h = sec.querySelector(':scope > h2'); return h ? h.textContent.replace(/\s*\(.*\)\s*$/, '').split(':')[0].trim() : ''; };
+function applyFolds(){
+  for (const sec of document.querySelectorAll('.panel section')){
+    const k = foldKey(sec); if (!k) continue;
+    const on = k in folds ? folds[k] : k === '지휘관 로그인' ? !!user : FOLD_DEFAULT.includes(k);
+    sec.classList.toggle('folded', on);
+    const h = sec.querySelector(':scope > h2');
+    h.tabIndex = 0; h.setAttribute('role', 'button'); h.setAttribute('aria-expanded', String(!on));
+  }
+}
+function toggleFold(h){
+  const sec = h.parentElement, k = foldKey(sec);
+  folds[k] = !sec.classList.contains('folded');
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch(e){}
+  applyFolds();
+}
+document.addEventListener('click', e => { const h = e.target.closest('.panel section > h2'); if (h) toggleFold(h); });
+document.addEventListener('keydown', e => {
+  const h = e.target.closest && e.target.closest('.panel section > h2');
+  if (h && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleFold(h); }
+});
+
+/* ===== 지도 띄우기 (항상 위 작은 창) ===== */
+// 크롬·엣지의 문서 PiP 창에 지도와 시계, 경보를 복사해 띄운다. 이 창은 다른 프로그램 위에 항상 떠 있다.
+// 읽기 전용이며 0.5초마다 작전판 내용을 따라간다. 통합 작전판 안에서는 맨 바깥 창의 기능을 빌려 쓴다.
+const PIP = {win:null, last:''};
+function pipApi(){
+  try { if (window.top && window.top.documentPictureInPicture) return window.top.documentPictureInPicture; } catch(e){}
+  return window.documentPictureInPicture;
+}
+const pipSource = () => document.querySelector('.mapbox') || document.querySelector('.gridwrap');
+async function openPip(){
+  if (PIP.win){ PIP.win.close(); return; }
+  const api = pipApi();
+  if (!api){ toast('이 브라우저는 지도 띄우기를 지원하지 않습니다. PC의 크롬이나 엣지 최신 버전에서 열어 주세요.'); return; }
+  const src = pipSource(), r = src.getBoundingClientRect();
+  const w = 440, h = Math.round(w * r.height / Math.max(1, r.width)) + 60;
+  let win;
+  try { win = await api.requestWindow({width:w, height:h}); }
+  catch(e){ toast('지도 창을 열지 못했습니다. 버튼을 다시 눌러 주세요.'); return; }
+  PIP.win = win; PIP.last = '';
+  for (const st of document.querySelectorAll('style, link[rel="stylesheet"]')) win.document.head.appendChild(st.cloneNode(true));
+  win.document.title = document.title;
+  win.document.body.className = 'pipbody';
+  win.document.body.dataset.mode = 'view';
+  win.document.body.innerHTML = `<div class='pip'><div class='pip-top'><span class='pip-clock'></span><span class='pip-sub'></span><span class='pip-head'></span></div><div class='pip-banner' hidden></div><div class='pip-map'></div></div>`;
+  win.addEventListener('pagehide', () => { PIP.win = null; renderPipBtn(); });
+  renderPipBtn(); syncPip();
+}
+function syncPip(){
+  if (!PIP.win) return;
+  const d = PIP.win.document, src = pipSource(); if (!src) return;
+  const html = src.innerHTML;
+  if (html !== PIP.last){ PIP.last = html; d.querySelector('.pip-map').innerHTML = html; }
+  const head = document.querySelector('#headline') || document.querySelector('#relic-text');
+  d.querySelector('.pip-clock').textContent = (document.querySelector('#clock') || {}).textContent || '';
+  d.querySelector('.pip-sub').textContent = (document.querySelector('#clock-sub') || {}).textContent || '';
+  d.querySelector('.pip-head').textContent = head ? head.textContent : '';
+  const b = document.querySelector('#banner'), pb = d.querySelector('.pip-banner'), on = b && b.classList.contains('on');
+  pb.hidden = !on;
+  if (on){ pb.textContent = b.textContent; pb.dataset.level = b.dataset.level || ''; }
+}
+function renderPipBtn(){
+  const btn = document.querySelector('#pip-btn'); if (!btn) return;
+  btn.textContent = PIP.win ? '지도 창 닫기' : '지도 띄우기';
+  btn.setAttribute('aria-pressed', String(!!PIP.win));
+}
+act.pip = openPip;
+setInterval(syncPip, 500);
+
+/* ===== 시작 ===== */
+const EMBEDDED = window.self !== window.top;
+if (EMBEDDED) document.documentElement.classList.add('embedded');
+if (FIREBASE_CONFIG && !EMBEDDED){ const nav = $('#nav'); nav.hidden = false; nav.href = 'index.html#' + ROOM; }
+render();
+if (FIREBASE_CONFIG) initFirebase(); else setSync('local', '데모 모드: 이 브라우저에만 저장');
+setInterval(() => { renderStatus(); renderBanner(); autoReset(); }, 500);
+window.addEventListener('hashchange', () => location.reload());
+})();
+</script>
+</body>
+</html>

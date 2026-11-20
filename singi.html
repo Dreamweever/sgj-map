@@ -170,7 +170,9 @@ body[data-mode="cmd"] #map[data-tool="arrow"],body[data-mode="cmd"] #map[data-to
 .field{display:flex;gap:6px;margin-top:8px}
 .field input{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 .field select{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-.live-t{font:700 9px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central}
+/* 실시간 조장 표시 */
+.lbl.live-name{font-size:10px;font-weight:700}
+.live-t{font:700 11px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central}
 .live-n{font:700 10px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central;fill:#fff}
 .slot-row{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .slot-row:first-of-type{border-top:0}
@@ -209,6 +211,22 @@ body[data-mode="cmd"] .view-only{display:none !important}
 .skrow input.cd{width:5.5em}
 .skst{font-size:.8rem;color:var(--muted);align-self:center}
 .btn.small{min-height:32px;padding:3px 9px;font-size:.8rem}
+.pipbtn{margin-left:auto}
+.pipbtn + .modes{margin-left:0}
+/* 지도 띄우기 창 */
+.pipbody{margin:0;background:var(--map-bg);overflow:hidden}
+.pip{display:flex;flex-direction:column;height:100vh;color:var(--map-ink);font-family:"IBM Plex Sans KR",system-ui,sans-serif}
+.pip-top{display:flex;gap:8px;align-items:baseline;padding:5px 10px;font-size:12px;white-space:nowrap;overflow:hidden}
+.pip-clock{font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.pip-sub{opacity:.7}
+.pip-head{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.pip-banner{padding:4px 10px;font-size:12px;font-weight:600;background:#2A3C42;color:var(--map-ink)}
+.pip-banner[data-level="danger"]{background:#C2332A;color:#fff}
+.pip-banner[data-level="manual"]{background:#E9C75E;color:#14201F}
+.pip-map{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:4px}
+.pip-map svg{width:100%;height:100%}
+.pip-map > .grid{width:min(100%, calc(100vh - 70px))}
+.pip-map .cell{cursor:default !important}
 #toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:.88rem;max-width:90vw;
   opacity:0;pointer-events:none;transition:opacity .2s}
@@ -221,6 +239,7 @@ body[data-mode="cmd"] .view-only{display:none !important}
   <header class="top">
     <h1>신기 쟁탈전 작전판</h1>
     <div class="meta"><span id="room"></span><span class="sync" id="sync" data-s="local"><i></i><span id="sync-t">데모 모드</span></span><a id="nav" hidden>낙화의 전장 작전판</a></div>
+    <button type="button" class="btn small pipbtn" id="pip-btn" data-act="pip" aria-pressed="false">지도 띄우기</button>
     <div class="modes" role="group" aria-label="화면 모드">
       <button type="button" data-act="mode" data-arg="cmd" aria-pressed="true">지휘</button>
       <button type="button" data-act="mode" data-arg="view" aria-pressed="false">보기</button>
@@ -295,6 +314,7 @@ body[data-mode="cmd"] .view-only{display:none !important}
       <section class="cmd-only" id="vision">
         <h2>화면 인식 (시험판)</h2>
         <div class="field" style="margin-top:0;margin-bottom:6px"><select id="v-me" aria-label="내 조"></select></div>
+        <div class="field" style="margin-top:0;margin-bottom:6px"><input type="text" id="v-name" maxlength="12" placeholder="지도에 보일 내 이름 (예: 철수)" aria-label="지도에 보일 내 이름"></div>
         <div class="row">
           <button type="button" class="btn primary" data-act="vConnect">게임 화면 연결</button>
           <button type="button" class="btn" data-act="vTest">스크린샷으로 시험</button>
@@ -302,6 +322,9 @@ body[data-mode="cmd"] .view-only{display:none !important}
         <div class="row">
           <button type="button" class="btn" data-act="vCal">영역 다시 지정</button>
           <button type="button" class="btn" data-act="vStop">인식 끄기</button>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" data-act="vJudge" id="v-judge">상황 판독 꺼짐</button>
         </div>
         <input type="file" id="v-file" accept="image/*" hidden>
         <div id="vision-sugg"></div>
@@ -550,18 +573,20 @@ const act = {
   mode(arg){ mode = arg; try { localStorage.setItem('sgj-mode', mode); } catch(e){} render(); },
   ours(s){ if (state.ours !== s) commit({ours:s, ...L('우리 거점: ' + SLOT_LABEL[s])}); },
   capture(s){ commit({relic:{status:'capturing',owner:s,at:now()}, ...L(nameOf(s) + ' 점령 시작')}); },
-  captureDone(){ const s = state.relic.owner; commit({relic:{status:'carrying',owner:s,at:now()}, ...L(nameOf(s) + ' 신기 점령 완료, 운반 시작')}); },
+  captureDone(){ if (state.relic.status !== 'capturing') return; const s = state.relic.owner; commit({relic:{status:'carrying',owner:s,at:now()}, ...L(nameOf(s) + ' 신기 점령 완료, 운반 시작')}); },
   captureStop(){ const s = state.relic.owner; commit({relic:{status:'center',owner:'',at:now()}, ...L(nameOf(s) + ' 점령 저지')}); },
   returnStart(){
+    if (state.relic.status !== 'carrying') return;
     const s = state.relic.owner;
     commit({relic:{status:'returning',owner:s,at:now()}, ...L(nameOf(s) + ' 반납 시작' + (state.altars[s] === 'down' ? ' (제단 파괴 상태)' : ''))});
   },
   returnDone(){
+    if (!state.relic.owner || state.relic.status === 'center') return;
     const s = state.relic.owner, n = (state.returns[s] || 0) + 1;
     commit({relic:{status:'center',owner:'',at:now()}, ['returns/' + s]:n, ...L(nameOf(s) + ' 신기 반납 완료 (' + n + '회)')});
   },
   steal(t){ commit({relic:{status:'carrying',owner:t,at:now()}, ...L(nameOf(t) + '가 신기 탈취')}); },
-  drop(){ commit({relic:{status:'center',owner:'',at:now()}, ...L('보유자 이탈, 신기가 중앙으로 돌아감')}); },
+  drop(){ if (!state.relic.owner) return; commit({relic:{status:'center',owner:'',at:now()}, ...L('보유자 이탈, 신기가 중앙으로 돌아감')}); },
   altar(arg){
     const [s, v] = arg.split(':');
     if (state.altars[s] === v) return;
@@ -1056,11 +1081,16 @@ function vTick(){
   if (isVideo() && VISION.src.readyState < 2) return;
   skillTick();
   if (!VISION.cal) return;
-  let map, stone;
-  try { map = readMap(); stone = readStone(); } catch(e){ return; }
-  if (stable(VISION.slotHist, map.slots)) VISION.slots = map.slots;
-  if (stable(VISION.centerHist, map.center)) VISION.center = map.center;
-  if (stone && stable(VISION.stoneHist, stone)) VISION.stone = stone;
+  // 점령석·거점 색 판독은 '상황 판독'을 켠 PC(지휘관 1명)에서만 한다. 조장 PC는 내 위치와 주변 적만 읽는다.
+  if (VISION.judge && VISION.cal.stone){
+    let map = null, stone = null;
+    try { map = readMap(); stone = readStone(); } catch(e){}
+    if (map){
+      if (stable(VISION.slotHist, map.slots)) VISION.slots = map.slots;
+      if (stable(VISION.centerHist, map.center)) VISION.center = map.center;
+      if (stone && stable(VISION.stoneHist, stone)) VISION.stone = stone;
+    }
+  }
   if (VISION.cal.round){
     try { updatePos(readArrow()); const dots = readDots(); VISION.red = dots.red; VISION.yel = dots.yel; } catch(e){}
     VISION.redHist.push(VISION.red); if (VISION.redHist.length > 2) VISION.redHist.shift();
@@ -1140,13 +1170,13 @@ function readDots(){
 const toMap = p => ({x:Math.round(520.5 * p.x - 66.5), y:Math.round(522.75 * p.y - 59.25)});
 function reportLive(){
   if (mode !== 'cmd' || !VISION.me || !VISION.pos || now() - VISION.posAt > 6000) return;
-  const t = now(), cur = (state.live || {})[VISION.me];
+  const t = now(), cur = (state.live || {})[SK.id];
   const n = VISION.redHist.length === 2 ? Math.min(...VISION.redHist) : 0;
   const {x, y} = toMap(VISION.pos);
   const changed = !cur || Math.hypot(x - cur.x, y - cur.y) > 4 || cur.n !== n;
   if ((changed && t - VISION.lastLive > 1000) || t - VISION.lastLive > 4000){
     VISION.lastLive = t;
-    commit({['live/' + VISION.me]:{x, y, n, at:t}});
+    commit({['live/' + SK.id]:{x, y, n, at:t, role:VISION.me, who:VISION.name || ''}});
   }
 }
 // 실시간 보고 표시: 8초 동안 새 보고가 없으면 흐려지고 20초면 사라진다.
@@ -1154,16 +1184,18 @@ let liveKey = '';
 function renderLive(){
   const t = now(), tc = colorOf(state.ours), chars = Object.fromEntries(ROLES.map(([k, c]) => [k, c]));
   const items = Object.entries(state.live || {}).filter(([, l]) => t - l.at < 20000);
-  const key = tc + items.map(([k, l]) => [k, l.x, l.y, l.n, t - l.at < 8000].join(',')).join('|');
+  const names = Object.fromEntries(ROLES.map(([k, , n]) => [k, n]));
+  const key = tc + items.map(([k, l]) => [k, l.x, l.y, l.n, l.who, l.role, t - l.at < 8000].join(',')).join('|');
   if (key === liveKey) return;
   liveKey = key;
   $('#g-live').innerHTML = items.map(([k, l]) => {
     const fresh = t - l.at < 8000;
     return `<g transform='translate(${l.x},${l.y})' opacity='${fresh ? 1 : .4}'>
-      <circle r='13' fill='none' stroke='var(--map-ink)' stroke-width='2' ${fresh ? `class='wave'` : ''}/>
-      <circle r='9' fill='${tc}' stroke='var(--map-bg)' stroke-width='2'/>
-      <text class='live-t' fill='${inkOn(tc)}'>${chars[k] || '?'}</text>
-      ${l.n > 0 ? `<g transform='translate(15,-14)'><rect x='-14' y='-8' width='28' height='16' rx='8' fill='var(--danger)' stroke='var(--map-bg)' stroke-width='1.5'/><text class='live-n'>적${l.n}</text></g>` : ''}
+      <circle r='16' fill='none' stroke='var(--map-ink)' stroke-width='2' ${fresh ? `class='wave'` : ''}/>
+      <circle r='12' fill='${tc}' stroke='var(--map-ink)' stroke-width='2'/>
+      <text class='live-t' fill='${inkOn(tc)}'>${chars[l.role || k] || '?'}</text>
+      <text y='29' class='lbl live-name'>${esc(l.who || names[l.role || k] || '')}</text>
+      ${l.n > 0 ? `<g transform='translate(18,-15)'><rect x='-14' y='-8' width='28' height='16' rx='8' fill='var(--danger)' stroke='var(--map-bg)' stroke-width='1.5'/><text class='live-n'>적${l.n}</text></g>` : ''}
     </g>`;
   }).join('');
 }
@@ -1204,7 +1236,9 @@ function openCal(){
   cv.width = Math.round(W * sc); cv.height = Math.round(H * sc);
   ctx.drawImage(VISION.src, 0, 0, cv.width, cv.height);
   const frame = ctx.getImageData(0, 0, cv.width, cv.height);
-  const steps = [['map', '1/3 네모난 전체 미니맵을 테두리에 맞춰 끌어서 감싸 주세요.'], ['stone', '2/3 우측 패널의 점령석 상태 글자(점령 불가 등)만 감싸 주세요.'], ['round', '3/3 왼쪽 위 원형 미니맵을 꼭 맞는 정사각형으로 감싸 주세요.']];
+  const allSteps = [['map', '네모난 전체 미니맵을 테두리에 맞춰 끌어서 감싸 주세요.'], ['stone', '우측 패널의 점령석 상태 글자(점령 불가 등)만 감싸 주세요.'], ['round', '왼쪽 위 원형 미니맵을 꼭 맞는 정사각형으로 감싸 주세요.']]
+    .filter(([k]) => VISION.judge || k !== 'stone');
+  const steps = allSteps.map(([k, m], n) => [k, (n + 1) + '/' + allSteps.length + ' ' + m]);
   let i = 0, st = null; const cal = {};
   const pos = e => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * cv.width / b.width, (e.clientY - b.top) * cv.height / b.height]; };
   const rect = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])];
@@ -1250,10 +1284,13 @@ function renderVision(){
   }
   const on = !!VISION.src;
   let h = '<div>상태: ' + (!on ? '꺼짐' : isVideo() ? '게임 화면 연결됨' : '스크린샷 시험 중') + (on && !VISION.cal ? ', 영역 지정 필요' : '') + '</div>';
-  if (on && VISION.cal){
+  if (on && VISION.cal && VISION.judge){
     h += '<div>점령석: ' + (VISION.stone ? (VISION.stone === 'locked' ? '점령 불가' : '점령 가능') : '읽는 중') + '</div>';
     h += '<div>중앙 아이콘: ' + (VISION.center ? (VISION.center === 'off' ? '비어 있음' : COLORS[VISION.center].n) : '읽는 중') + '</div>';
     h += '<div>거점 색: ' + (VISION.slots ? vSlotText(VISION.slots) : '읽는 중') + '</div>';
+    if (!VISION.cal.stone) h += `<div style='color:var(--danger)'>점령석 글자 영역이 없습니다. 영역 다시 지정을 눌러 주세요.</div>`;
+  }
+  if (on && VISION.cal){
     if (!VISION.cal.round) h += `<div style='color:var(--danger)'>원형 미니맵 영역이 없어 내 위치와 주변 적을 못 읽습니다. 영역 다시 지정을 눌러 주세요.</div>`;
     else {
       h += '<div>내 위치: ' + (VISION.pos && now() - VISION.posAt < 6000 ? '감지됨' : '화살표를 찾는 중') + ', 주변 적 ' + VISION.red + ', 아군 ' + VISION.yel + '</div>';
@@ -1284,7 +1321,10 @@ function renderVision(){
     if (diff && key !== VISION.slotIgnored)
       s += `<div class='sugg'><p>인식한 거점 색이 설정과 다릅니다.</p><p style='font-weight:400'>${vSlotText(VISION.slots)}</p><div class='row'><button type='button' class='btn primary' data-act='vApplySlots'>설정에 적용</button><button type='button' class='btn' data-act='vIgnoreSlots'>무시</button></div></div>`;
   }
+  if (!VISION.judge) s = '';
   setHtml('vision-sugg', s);
+  const jb = $('#v-judge');
+  if (jb){ jb.setAttribute('aria-pressed', String(!!VISION.judge)); jb.textContent = VISION.judge ? '상황 판독 켜짐 (지휘관 1명만)' : '상황 판독 꺼짐'; }
   drawPreview();
 }
 Object.assign(act, {
@@ -1304,7 +1344,7 @@ Object.assign(act, {
   vCal(){ if (!VISION.src){ toast('먼저 게임 화면을 연결하거나 스크린샷을 올려 주세요.'); return; } openCal(); },
   vStop(){ vStopAll(); },
   calCancel(){ $('#cal').hidden = true; },
-  vTaken(s){ VISION.sugg = null; commit({relic:{status:'carrying',owner:s,at:now()}, ...L(nameOf(s) + ' 신기 점령 완료, 운반 시작 (화면 인식)')}); },
+  vTaken(s){ VISION.sugg = null; if (state.relic.owner === s && state.relic.status !== 'capturing') return; commit({relic:{status:'carrying',owner:s,at:now()}, ...L(nameOf(s) + ' 신기 점령 완료, 운반 시작 (화면 인식)')}); },
   vReturned(){ VISION.sugg = null; act.returnDone(); },
   vDropped(){ VISION.sugg = null; act.drop(); },
   vDismiss(key){ VISION.dismissed = key || ''; renderVision(); },
@@ -1362,6 +1402,7 @@ function skillTick(){
   renderSkillCfg();
 }
 function skSend(){
+  if (!SK.cfg.who && VISION.name) SK.cfg.who = VISION.name;
   SK.lastSent = now();
   const list = {};
   SK.cfg.list.forEach((sk, i) => {
@@ -1523,6 +1564,54 @@ document.addEventListener('keydown', e => {
   if (h && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleFold(h); }
 });
 
+/* ===== 지도 띄우기 (항상 위 작은 창) ===== */
+// 크롬·엣지의 문서 PiP 창에 지도와 시계, 경보를 복사해 띄운다. 이 창은 다른 프로그램 위에 항상 떠 있다.
+// 읽기 전용이며 0.5초마다 작전판 내용을 따라간다. 통합 작전판 안에서는 맨 바깥 창의 기능을 빌려 쓴다.
+const PIP = {win:null, last:''};
+function pipApi(){
+  try { if (window.top && window.top.documentPictureInPicture) return window.top.documentPictureInPicture; } catch(e){}
+  return window.documentPictureInPicture;
+}
+const pipSource = () => document.querySelector('.mapbox') || document.querySelector('.gridwrap');
+async function openPip(){
+  if (PIP.win){ PIP.win.close(); return; }
+  const api = pipApi();
+  if (!api){ toast('이 브라우저는 지도 띄우기를 지원하지 않습니다. PC의 크롬이나 엣지 최신 버전에서 열어 주세요.'); return; }
+  const src = pipSource(), r = src.getBoundingClientRect();
+  const w = 440, h = Math.round(w * r.height / Math.max(1, r.width)) + 60;
+  let win;
+  try { win = await api.requestWindow({width:w, height:h}); }
+  catch(e){ toast('지도 창을 열지 못했습니다. 버튼을 다시 눌러 주세요.'); return; }
+  PIP.win = win; PIP.last = '';
+  for (const st of document.querySelectorAll('style, link[rel="stylesheet"]')) win.document.head.appendChild(st.cloneNode(true));
+  win.document.title = document.title;
+  win.document.body.className = 'pipbody';
+  win.document.body.dataset.mode = 'view';
+  win.document.body.innerHTML = `<div class='pip'><div class='pip-top'><span class='pip-clock'></span><span class='pip-sub'></span><span class='pip-head'></span></div><div class='pip-banner' hidden></div><div class='pip-map'></div></div>`;
+  win.addEventListener('pagehide', () => { PIP.win = null; renderPipBtn(); });
+  renderPipBtn(); syncPip();
+}
+function syncPip(){
+  if (!PIP.win) return;
+  const d = PIP.win.document, src = pipSource(); if (!src) return;
+  const html = src.innerHTML;
+  if (html !== PIP.last){ PIP.last = html; d.querySelector('.pip-map').innerHTML = html; }
+  const head = document.querySelector('#headline') || document.querySelector('#relic-text');
+  d.querySelector('.pip-clock').textContent = (document.querySelector('#clock') || {}).textContent || '';
+  d.querySelector('.pip-sub').textContent = (document.querySelector('#clock-sub') || {}).textContent || '';
+  d.querySelector('.pip-head').textContent = head ? head.textContent : '';
+  const b = document.querySelector('#banner'), pb = d.querySelector('.pip-banner'), on = b && b.classList.contains('on');
+  pb.hidden = !on;
+  if (on){ pb.textContent = b.textContent; pb.dataset.level = b.dataset.level || ''; }
+}
+function renderPipBtn(){
+  const btn = document.querySelector('#pip-btn'); if (!btn) return;
+  btn.textContent = PIP.win ? '지도 창 닫기' : '지도 띄우기';
+  btn.setAttribute('aria-pressed', String(!!PIP.win));
+}
+act.pip = openPip;
+setInterval(syncPip, 500);
+
 /* ===== 시작 ===== */
 // 통합 작전판(index.html) 안에 탭으로 들어가 있을 때는 제목과 다른 작전판 링크를 숨긴다.
 const EMBEDDED = window.self !== window.top;
@@ -1532,8 +1621,27 @@ buildSetup(); buildTokens(); render();
 if (FIREBASE_CONFIG) initFirebase(); else setSync('local', '데모 모드: 이 브라우저에만 저장');
 setInterval(() => { renderClock(); renderBanner(); renderPings(); renderLive(); }, 250);
 try { VISION.me = localStorage.getItem('sgj-me') || ''; } catch(e){}
+try { VISION.judge = localStorage.getItem('sgj-judge') === '1'; VISION.name = localStorage.getItem('reporter-name') || ''; } catch(e){}
+$('#v-name').value = VISION.name || '';
+$('#v-name').addEventListener('change', e => {
+  VISION.name = e.target.value.trim();
+  try { localStorage.setItem('reporter-name', VISION.name); } catch(err){}
+  VISION.lastLive = 0;
+});
+act.vJudge = () => {
+  VISION.judge = !VISION.judge;
+  try { localStorage.setItem('sgj-judge', VISION.judge ? '1' : '0'); } catch(e){}
+  VISION.slotHist = []; VISION.stoneHist = []; VISION.centerHist = [];
+  if (VISION.judge){
+    toast('상황 판독을 켰습니다. 점령석과 거점 색은 이 PC 한 대에서만 판독하세요.');
+    if (VISION.src && (!VISION.cal || !VISION.cal.stone)) openCal();
+  }
+  renderVision();
+};
 $('#v-me').addEventListener('change', e => {
+  const prev = VISION.me;
   VISION.me = e.target.value;
+  if (prev && !VISION.me && mode === 'cmd') commit({['live/' + SK.id]:null});
   try { localStorage.setItem('sgj-me', VISION.me); } catch(err){}
   renderVision();
 });

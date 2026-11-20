@@ -63,7 +63,9 @@ body{margin:0;display:flex;flex-direction:column;background:var(--bg);color:var(
 // 작전판 목록. 새 콘텐츠를 만들면 여기에 추가한다.
 const PAGES = [
   {id:'singi', title:'신기 쟁탈전', src:'singi.html'},
-  {id:'nakwa', title:'낙화의 전장', src:'nakwa.html'}
+  {id:'nakwa', title:'낙화의 전장', src:'nakwa.html'},
+  {id:'mihok', title:'미혹의 정원', src:'mihok.html'},
+  {id:'chawon', title:'차원 점령전', src:'chawon.html'}
 ];
 const ROOM = ((location.hash || '').slice(1).match(/^[A-Za-z0-9-]{1,40}$/) || [])[0] || 'main';
 const frames = {};
