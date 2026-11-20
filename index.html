@@ -85,7 +85,8 @@ function show(id){
     f.id = 'frame-' + id;
     f.title = page.title + ' 작전판';
     f.allow = 'display-capture; clipboard-write';
-    f.src = page.src + '#' + ROOM;
+    // 브라우저·GitHub 캐시 때문에 옛 파일이 뜨지 않도록 열 때마다 새로 받는다.
+    f.src = page.src + '?v=' + Date.now() + '#' + ROOM;
     document.getElementById('frames').appendChild(f);
     frames[id] = f;
   }
