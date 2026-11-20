@@ -102,6 +102,20 @@ body[data-mode="cmd"] #map:not([data-tool="move"]):not([data-tool="erase"]){curs
 
 .panel section{background:var(--surface);border-radius:14px;padding:12px 14px 14px;margin-bottom:10px}
 .panel h2{font-family:Hahmlet,serif;font-size:1rem;font-weight:700;margin:0 0 8px}
+/* 도구 묶음 접기: 제목을 누르면 접히고 펼쳐진다 */
+.panel section > h2{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel section > h2::after{content:"▾";font-family:"IBM Plex Sans KR",sans-serif;color:var(--muted);font-size:.9rem}
+.panel section.folded > h2{margin-bottom:0}
+.panel section.folded > h2::after{content:"▸"}
+.panel section.folded > :not(h2){display:none !important}
+/* 세로로 긴 화면: 지도는 위에 화면 높이의 절반 정도로, 지휘 도구는 그 아래 여러 단으로 */
+@media (orientation:portrait) and (min-width:700px){
+  .wrap{max-width:none}
+  .main{grid-template-columns:minmax(0,1fr)}
+  .main > div:first-child{width:min(100%, 48vh);margin:0 auto}
+  .panel{columns:300px;column-gap:10px}
+  .panel section{break-inside:avoid}
+}
 .hint{font-size:.8rem;color:var(--muted);margin:6px 0 0}
 .row{display:flex;flex-wrap:wrap;gap:6px}
 .row + .row{margin-top:6px}
@@ -148,6 +162,17 @@ body[data-mode="cmd"] .view-only{display:none !important}
 #v-prev{display:block;margin-top:8px;border-radius:8px;background:var(--map-bg);max-width:160px}
 #v-prev[hidden]{display:none}
 .field select{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.sklist{list-style:none;margin:0;padding:0;font-size:.88rem}
+.sklist .sk{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
+.sklist .sk:first-child{border-top:0}
+.sklist .sk.ready strong{color:#2E9E5B}
+.sklist .sk.stale{opacity:.5}
+.skrow{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.skrow select,.skrow input{font:inherit;font-size:.85rem;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);min-width:0}
+.skrow input[data-f="name"]{flex:1}
+.skrow input.cd{width:5.5em}
+.skst{font-size:.8rem;color:var(--muted);align-self:center}
+.btn.small{min-height:32px;padding:3px 9px;font-size:.8rem}
 #toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:.88rem;max-width:90vw;
   opacity:0;pointer-events:none;transition:opacity .2s}
@@ -229,6 +254,12 @@ body[data-mode="cmd"] .view-only{display:none !important}
         <div class="vread" id="vision-read"></div>
         <canvas id="v-prev" width="160" height="160" hidden aria-label="인식 영역 미리보기"></canvas>
         <p class="hint">파티장 PC에서 게임 창을 공유하면 전체 미니맵의 내 화살표로 파티 위치를, 원형 미니맵의 붉은 표식으로 주변 적을 읽어 작전판에 올립니다. 적은 서버 구분이 안 되어 회색 ? 표시로 찍히니, 지휘관이 적 A·B 출몰 도구로 그 표시를 눌러 서버를 지정하세요. 채널은 파티 목록에서 직접 바꿔 주세요. 화면은 이 브라우저 안에서만 처리됩니다.</p>
+        <div id="skill-cfg" style="margin-top:10px"></div>
+      </section>
+
+      <section id="skill-sec" hidden>
+        <h2>스킬 현황</h2>
+        <ul class="sklist" id="skill-board"></ul>
       </section>
 
       <section class="cmd-only">
@@ -859,7 +890,7 @@ function render(){
     ? CH_NAME[viewCh] + ' 상황입니다. 적 출몰과 화살표는 채널마다 따로, 구역 표시와 보스 집결 지점은 모든 채널에 공통으로 보여요.'
     : CH_NAME[viewCh] + ' 상황입니다. 적 출몰과 화살표는 채널마다 따로, 구역 표시와 보스 집결 지점은 모든 채널에 공통으로 보여요.';
   renderTabs(); renderMap(); renderParties(); renderTools(); renderBoss(); renderServers();
-  renderLog(); renderHeadline(); renderClock(); renderBanner(); renderAuth(); renderVision();
+  renderLog(); renderHeadline(); renderClock(); renderBanner(); renderAuth(); renderVision(); applyFolds();
 }
 
 /* ===== 알림 ===== */
@@ -1005,8 +1036,10 @@ function report(){
   if (Object.keys(u).length) commit(u);
 }
 function vTick(){
-  if (!VISION.src || !VISION.cal) return;
+  if (!VISION.src) return;
   if (isVideo() && VISION.src.readyState < 2) return;
+  skillTick();
+  if (!VISION.cal) return;
   let pos, dots;
   try { pos = readArrow(); dots = readDots(); } catch(e){ return; }
   VISION.pos = pos; VISION.red = dots.red; VISION.yel = dots.yel;
@@ -1133,6 +1166,206 @@ $('#v-file').addEventListener('change', e => {
   const img = new Image();
   img.onload = () => vUse(img);
   img.src = URL.createObjectURL(f);
+});
+
+/* ===== 스킬 추적 (선택) ===== */
+// 내 PC 화면의 궁극기·특정 스킬 칸을 읽어 사용 가능 여부를 작전판에 올린다. 꺼 두면 아무것도 읽지 않는다.
+// 설정은 이 PC에만 저장되고, 신기 쟁탈전과 낙화의 전장 작전판이 같은 설정을 함께 쓴다.
+const SK = {cfg:{on:false, who:'', list:[]}, id:'', hist:{}, now:{}, lastSent:0, prev:{}, html:'', cfgHtml:''};
+try { Object.assign(SK.cfg, JSON.parse(localStorage.getItem('skill-cfg')) || {}); } catch(e){}
+try {
+  SK.id = localStorage.getItem('skill-id') || '';
+  if (!SK.id){ SK.id = 'r' + uid(); localStorage.setItem('skill-id', SK.id); }
+} catch(e){ SK.id = 'r' + uid(); }
+const skSave = () => { try { localStorage.setItem('skill-cfg', JSON.stringify(SK.cfg)); } catch(e){} };
+// 궁극기: 준비되면 육각형 테두리에 주황 빛이 둘러진다. 일반 스킬: 준비된 모습의 밝기를 기억해 두고 어두워지면 대기 중으로 본다.
+function skRead(sk){
+  const d = grab(sk.rect).data;
+  let n = 0, glow = 0, vs = 0;
+  for (let i = 0; i < d.length; i += 4){
+    const [hh, ss, vv] = rgb2hsv(d[i], d[i + 1], d[i + 2]);
+    n++; vs += vv;
+    if (hh >= 18 && hh <= 48 && ss > .55 && vv > .75) glow++;
+  }
+  if (sk.kind === 'ult') return glow / n > .012;
+  if (!sk.ref) return null;
+  return vs / n >= sk.ref * .8;
+}
+function skillTick(){
+  if (!SK.cfg.on) return;
+  const t = now(); let changed = false;
+  SK.cfg.list.forEach((sk, i) => {
+    if (!sk.rect) return;
+    let r; try { r = skRead(sk); } catch(e){ return; }
+    if (r === null) return;
+    const h = SK.hist[i] = (SK.hist[i] || []).concat(r).slice(-2);
+    if (h.length < 2 || h[0] !== h[1]) return; // 사용 순간의 번쩍임 같은 한 번 튀는 값은 무시
+    const cur = SK.now[i];
+    if (!cur || cur.ready !== r){ SK.now[i] = {ready:r, since:t}; changed = true; }
+  });
+  if (mode === 'cmd' && (changed || t - SK.lastSent > 10000)) skSend();
+  renderSkillCfg();
+}
+function skSend(){
+  SK.lastSent = now();
+  const list = {};
+  SK.cfg.list.forEach((sk, i) => {
+    const s = SK.now[i];
+    if (sk.rect && s) list['s' + i] = {name:sk.name || (sk.kind === 'ult' ? '궁극기' : '스킬 ' + (i + 1)), ready:s.ready, since:s.since, cd:+sk.cd || 0};
+  });
+  commit({['skills/' + SK.id]:{who:SK.cfg.who || '이름 없음', list, at:now()}});
+}
+function pickRect(msg, done){
+  const ov = $('#cal'), cv = $('#cal-cv'), ctx = cv.getContext('2d');
+  const [W, H] = srcSize();
+  if (!W || !H){ toast('화면을 아직 받지 못했습니다. 잠시 후 다시 눌러 주세요.'); return; }
+  const sc = Math.min((window.innerWidth - 56) / W, (window.innerHeight - 150) / H, 1.5);
+  cv.width = Math.round(W * sc); cv.height = Math.round(H * sc);
+  ctx.drawImage(VISION.src, 0, 0, cv.width, cv.height);
+  const frame = ctx.getImageData(0, 0, cv.width, cv.height);
+  let st = null;
+  const pos = e => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * cv.width / b.width, (e.clientY - b.top) * cv.height / b.height]; };
+  const rect = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])];
+  const draw = r => { ctx.putImageData(frame, 0, 0); if (r){ ctx.strokeStyle = '#F0D06A'; ctx.lineWidth = 2; ctx.strokeRect(r[0], r[1], r[2], r[3]); } };
+  $('#cal-msg').textContent = msg;
+  ov.hidden = false;
+  cv.onpointerdown = e => { st = pos(e); cv.setPointerCapture(e.pointerId); };
+  cv.onpointermove = e => { if (st) draw(rect(st, pos(e))); };
+  cv.onpointerup = e => {
+    if (!st) return;
+    const r = rect(st, pos(e)); st = null;
+    if (r[2] < 6 || r[3] < 6){ draw(); return; }
+    ov.hidden = true;
+    done([r[0] / cv.width, r[1] / cv.height, r[2] / cv.width, r[3] / cv.height]);
+  };
+}
+function skStatusText(i){
+  const sk = SK.cfg.list[i];
+  if (!sk.rect) return '칸을 지정하세요';
+  if (sk.kind !== 'ult' && !sk.ref) return '준비 모습을 기억시키세요';
+  if (!VISION.src) return '화면 연결 대기';
+  const s = SK.now[i];
+  return s ? (s.ready ? '사용 가능' : '대기 중') : '읽는 중';
+}
+function renderSkillCfg(){
+  const box = $('#skill-cfg');
+  if (!box || (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT')) return;
+  const c = SK.cfg;
+  let h = `<div class='row'><button type='button' class='btn' data-act='skOn' aria-pressed='${c.on}'>스킬 추적 ${c.on ? '켜짐' : '꺼짐'}</button></div>`;
+  if (c.on){
+    h += `<div class='field'><input type='text' data-skwho value='${esc(c.who)}' maxlength='16' placeholder='작전판에 보일 내 이름 (예: 1파티장)' aria-label='내 표시 이름'></div>`;
+    h += c.list.map((sk, i) => `<div class='skrow'>
+      <div class='row'>
+        <select data-sk='${i}' data-f='kind' aria-label='스킬 종류'><option value='ult' ${sk.kind === 'ult' ? 'selected' : ''}>궁극기</option><option value='normal' ${sk.kind !== 'ult' ? 'selected' : ''}>일반 스킬</option></select>
+        <input type='text' data-sk='${i}' data-f='name' value='${esc(sk.name || '')}' maxlength='12' placeholder='스킬 이름' aria-label='스킬 이름'>
+        <input type='text' inputmode='numeric' class='cd' data-sk='${i}' data-f='cd' value='${esc(sk.cd || '')}' maxlength='4' placeholder='쿨(초)' aria-label='쿨타임 초'>
+      </div>
+      <div class='row'>
+        <button type='button' class='btn small' data-act='skPick' data-arg='${i}'>${sk.rect ? '칸 다시 지정' : '칸 지정'}</button>
+        ${sk.kind !== 'ult' ? `<button type='button' class='btn small' data-act='skRef' data-arg='${i}'>${sk.ref ? '준비 모습 다시 기억' : '준비 모습 기억'}</button>` : ''}
+        <button type='button' class='btn small' data-act='skDel' data-arg='${i}'>삭제</button>
+        <span class='skst'>${skStatusText(i)}</span>
+      </div></div>`).join('');
+    if (c.list.length < 3) h += `<div class='row' style='margin-top:8px'><button type='button' class='btn' data-act='skAdd'>추적할 스킬 추가</button></div>`;
+  }
+  if (h !== SK.cfgHtml){ SK.cfgHtml = h; box.innerHTML = h; }
+}
+// 스킬 현황: 모든 보고자의 스킬 상태. 지휘 화면에서는 누군가의 스킬이 준비되는 순간 알림을 띄운다.
+function renderSkillBoard(){
+  const box = $('#skill-board'); if (!box) return;
+  const t = now(), rows = [];
+  for (const [rid, r] of Object.entries(state.skills || {})){
+    const stale = t - r.at > 30000;
+    for (const [sid, s] of Object.entries(r.list || {})){
+      let st, cls = '';
+      if (stale){ st = '연결 끊김'; cls = 'stale'; }
+      else if (s.ready){ st = '사용 가능'; cls = 'ready'; }
+      else if (s.cd){ const left = Math.ceil(s.cd - (t - s.since) / 1000); st = left > 0 ? '약 ' + left + '초 남음' : '곧 준비'; }
+      else st = '대기 중 (사용 후 ' + Math.floor((t - s.since) / 1000) + '초)';
+      const key = rid + '/' + sid, was = SK.prev[key];
+      if (!stale && s.ready && was === false && mode === 'cmd') toast(r.who + ' ' + s.name + ' 준비됨');
+      SK.prev[key] = stale ? undefined : !!s.ready;
+      rows.push(`<li class='sk ${cls}'><span>${esc(r.who)}</span><span>${esc(s.name)}</span><strong>${st}</strong></li>`);
+    }
+  }
+  $('#skill-sec').hidden = !rows.length;
+  const html = rows.join('');
+  if (html !== SK.html){ SK.html = html; box.innerHTML = html; }
+}
+Object.assign(act, {
+  skOn(){
+    SK.cfg.on = !SK.cfg.on;
+    if (!SK.cfg.on){
+      SK.now = {}; SK.hist = {};
+      if (mode === 'cmd') commit({['skills/' + SK.id]:null});
+    } else if (!SK.cfg.list.length) SK.cfg.list.push({kind:'ult', name:'궁극기', cd:''});
+    skSave(); SK.cfgHtml = ''; renderSkillCfg();
+  },
+  skAdd(){
+    if (SK.cfg.list.length >= 3) return;
+    SK.cfg.list.push({kind:'normal', name:'', cd:''});
+    skSave(); SK.cfgHtml = ''; renderSkillCfg();
+  },
+  skDel(i){
+    SK.cfg.list.splice(+i, 1); SK.hist = {}; SK.now = {};
+    skSave(); SK.cfgHtml = ''; renderSkillCfg();
+    if (SK.cfg.on && mode === 'cmd') skSend();
+  },
+  skPick(i){
+    if (!VISION.src){ toast('먼저 게임 화면을 연결하거나 스크린샷을 올려 주세요.'); return; }
+    pickRect('추적할 스킬 칸 하나를 감싸 주세요. 궁극기는 육각형 테두리까지 넉넉히 포함해 주세요.', r => {
+      SK.cfg.list[+i].rect = r; SK.hist[+i] = []; delete SK.now[+i];
+      skSave(); SK.cfgHtml = ''; renderSkillCfg();
+    });
+  },
+  skRef(i){
+    const sk = SK.cfg.list[+i];
+    if (!VISION.src || !sk.rect){ toast('먼저 화면을 연결하고 칸을 지정하세요.'); return; }
+    const d = grab(sk.rect).data; let vs = 0, n = 0;
+    for (let k = 0; k < d.length; k += 4){ vs += rgb2hsv(d[k], d[k + 1], d[k + 2])[2]; n++; }
+    sk.ref = vs / n; SK.hist[+i] = []; delete SK.now[+i];
+    skSave(); SK.cfgHtml = ''; renderSkillCfg();
+    toast('스킬이 준비된 모습을 기억했습니다. 꼭 사용 가능할 때 눌러 주세요.');
+  }
+});
+$('#skill-cfg').addEventListener('change', e => {
+  const t = e.target;
+  if (t.hasAttribute('data-skwho')){ SK.cfg.who = t.value.trim(); skSave(); if (SK.cfg.on && mode === 'cmd') skSend(); return; }
+  const i = +t.dataset.sk, f = t.dataset.f;
+  if (!SK.cfg.list[i] || !f) return;
+  SK.cfg.list[i][f] = f === 'cd' ? (parseInt(t.value, 10) || '') : t.value.trim();
+  if (f === 'kind'){ SK.hist[i] = []; delete SK.now[i]; }
+  skSave(); SK.cfgHtml = ''; renderSkillCfg();
+  if (SK.cfg.on && mode === 'cmd') skSend();
+});
+renderSkillCfg();
+setInterval(renderSkillBoard, 1000);
+
+/* ===== 도구 묶음 접기 ===== */
+// 준비할 때만 쓰는 묶음(로그인, 설정, 화면 인식)은 처음에 접어 두고, 접고 펼친 상태는 이 브라우저에 기억한다.
+const FOLD_KEY = 'fold-nk', FOLD_DEFAULT = ['설정', '화면 인식'];
+let folds = {};
+try { folds = JSON.parse(localStorage.getItem(FOLD_KEY)) || {}; } catch(e){}
+const foldKey = sec => { const h = sec.querySelector(':scope > h2'); return h ? h.textContent.replace(/\s*\(.*\)\s*$/, '').split(':')[0].trim() : ''; };
+function applyFolds(){
+  for (const sec of document.querySelectorAll('.panel section')){
+    const k = foldKey(sec); if (!k) continue;
+    const on = k in folds ? folds[k] : k === '지휘관 로그인' ? !!user : FOLD_DEFAULT.includes(k);
+    sec.classList.toggle('folded', on);
+    const h = sec.querySelector(':scope > h2');
+    h.tabIndex = 0; h.setAttribute('role', 'button'); h.setAttribute('aria-expanded', String(!on));
+  }
+}
+function toggleFold(h){
+  const sec = h.parentElement, k = foldKey(sec);
+  folds[k] = !sec.classList.contains('folded');
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch(e){}
+  applyFolds();
+}
+document.addEventListener('click', e => { const h = e.target.closest('.panel section > h2'); if (h) toggleFold(h); });
+document.addEventListener('keydown', e => {
+  const h = e.target.closest && e.target.closest('.panel section > h2');
+  if (h && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleFold(h); }
 });
 
 /* ===== 시작 ===== */
