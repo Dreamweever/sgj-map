@@ -73,6 +73,13 @@ h1{font-family:Hahmlet,"Nanum Myeongjo",serif;font-weight:700;font-size:1.4rem;m
 
 .main{display:grid;gap:14px}
 @media (min-width:960px){.main{grid-template-columns:minmax(0,1fr) 390px;align-items:start}}
+/* 넓은 화면: 지도는 화면 높이에 맞추고, 지휘 도구는 오른쪽에 여러 단으로 펼쳐 스크롤 없이 보이게 한다. */
+@media (min-width:1500px){
+  .wrap{max-width:2400px}
+  .main{grid-template-columns:min(800px, calc(100vh - 230px)) minmax(0,1fr)}
+  .panel{columns:340px;column-gap:10px}
+  .panel section{break-inside:avoid}
+}
 .chtabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
 .chtabs .cnt{font-size:.78rem;opacity:.75;margin-left:4px}
 .mapbox{background:var(--map-bg);border-radius:16px;padding:6px;overflow:hidden}

@@ -90,6 +90,14 @@ h1{font-family:Hahmlet,"Nanum Myeongjo",serif;font-weight:700;font-size:1.4rem;m
 
 .main{display:grid;gap:14px}
 @media (min-width:920px){.main{grid-template-columns:minmax(0,1fr) 390px;align-items:start}}
+/* 넓은 화면: 지도는 화면 높이에 맞추고, 지휘 도구는 오른쪽에 여러 단으로 펼쳐 스크롤 없이 보이게 한다. */
+@media (min-width:1500px){
+  .wrap{max-width:2400px}
+  .main{grid-template-columns:min(760px, calc(100vh - 190px)) minmax(0,1fr)}
+  .mapbox{max-width:none}
+  .panel{columns:340px;column-gap:10px}
+  .panel section{break-inside:avoid}
+}
 .mapbox{background:var(--map-bg);border-radius:16px;padding:6px;max-width:720px;width:100%;margin:0 auto}
 #map{display:block;width:100%;height:auto;touch-action:none;user-select:none;-webkit-user-select:none}
 .caption{font-size:.78rem;color:var(--muted);margin:6px 4px 0}
@@ -146,6 +154,9 @@ body[data-mode="cmd"] #map[data-tool="arrow"],body[data-mode="cmd"] #map[data-to
 
 .field{display:flex;gap:6px;margin-top:8px}
 .field input{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.field select{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.live-t{font:700 9px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central}
+.live-n{font:700 10px "IBM Plex Sans KR",sans-serif;text-anchor:middle;dominant-baseline:central;fill:#fff}
 .slot-row{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .slot-row:first-of-type{border-top:0}
 .slot-row .opts{display:flex;gap:6px;flex-wrap:wrap}
@@ -239,6 +250,7 @@ body[data-mode="cmd"] .view-only{display:none !important}
             <rect class="gem" x="-7" y="-7" width="14" height="14" rx="2" transform="rotate(45)"/>
           </g>
           <g id="g-tokens"></g>
+          <g id="g-live"></g>
           <g id="g-temp"></g>
         </svg>
       </div>
@@ -256,6 +268,7 @@ body[data-mode="cmd"] .view-only{display:none !important}
 
       <section class="cmd-only" id="vision">
         <h2>화면 인식 (시험판)</h2>
+        <div class="field" style="margin-top:0;margin-bottom:6px"><select id="v-me" aria-label="내 조"></select></div>
         <div class="row">
           <button type="button" class="btn primary" data-act="vConnect">게임 화면 연결</button>
           <button type="button" class="btn" data-act="vTest">스크린샷으로 시험</button>
@@ -268,7 +281,7 @@ body[data-mode="cmd"] .view-only{display:none !important}
         <div id="vision-sugg"></div>
         <div class="vread" id="vision-read"></div>
         <canvas id="v-prev" width="160" height="160" hidden aria-label="인식 영역 미리보기"></canvas>
-        <p class="hint">PC에서 게임 창을 공유하면 미니맵의 거점 색과 점령석 상태를 읽어 제안합니다. 화면은 이 브라우저 안에서만 처리됩니다. 브라우저 창을 최소화하면 인식이 멈추거나 느려지니 보조 모니터나 작은 창으로 띄워 두세요.</p>
+        <p class="hint">PC에서 게임 창을 공유하면 미니맵의 거점 색과 점령석 상태를 읽어 제안합니다. 내 조를 고르면 내 위치와 원형 미니맵의 주변 적 수도 지도에 실시간으로 올립니다. 화면은 이 브라우저 안에서만 처리됩니다. 브라우저 창을 최소화하면 인식이 멈추거나 느려지니 보조 모니터나 작은 창으로 띄워 두세요.</p>
       </section>
 
       <section>
@@ -402,7 +415,7 @@ function defaultState(){
     phase:'open',
     plans:{ open:{tokens:tray(),arrows:{}}, mid:{tokens:tray(),arrows:{}}, late:{tokens:tray(),arrows:{}} },
     alert:{text:'',at:0},
-    pings:{}, log:{}
+    pings:{}, log:{}, live:{}
   };
 }
 const clone = v => JSON.parse(JSON.stringify(v));
@@ -562,7 +575,7 @@ const act = {
       relic:{status:'center',owner:'',at:now()},
       altars:{nw:'ok',ne:'ok',sw:'ok',se:'ok'},
       returns:{nw:0,ne:0,sw:0,se:0},
-      'timer/start':0, alert:{text:'',at:0}, pings:null, log:null, phase:'open'
+      'timer/start':0, alert:{text:'',at:0}, pings:null, log:null, phase:'open', live:null
     });
     commit(L('새 판 시작'));
   },
@@ -689,6 +702,7 @@ function renderMap(){
     g.querySelector('circle').setAttribute('fill', tc);
     g.querySelector('text').setAttribute('fill', inkOn(tc));
   }
+  renderLive();
   $('#map').dataset.tool = tool;
 }
 function arrowSvg(a, id){
@@ -929,7 +943,8 @@ function fbLogin(){
 const VISION = {
   rel:{nw:[.242,.335], ne:[.758,.335], sw:[.242,.66], se:[.758,.66], center:[.505,.494]},
   src:null, stream:null, timer:0, worker:null,
-  cal:null, slotHist:[], stoneHist:[], centerHist:[], slots:null, stone:null, center:null, sugg:null, slotIgnored:'', dismissed:'', html:{}
+  cal:null, slotHist:[], stoneHist:[], centerHist:[], slots:null, stone:null, center:null, sugg:null, slotIgnored:'', dismissed:'', html:{},
+  me:'', pos:null, posAt:0, cand:null, red:0, yel:0, redHist:[], lastLive:0
 };
 try { VISION.cal = JSON.parse(localStorage.getItem('sgj-cal')); } catch(e){}
 const vcan = document.createElement('canvas');
@@ -1012,7 +1027,111 @@ function vTick(){
   if (stable(VISION.slotHist, map.slots)) VISION.slots = map.slots;
   if (stable(VISION.centerHist, map.center)) VISION.center = map.center;
   if (stone && stable(VISION.stoneHist, stone)) VISION.stone = stone;
+  if (VISION.cal.round){
+    try { updatePos(readArrow()); const dots = readDots(); VISION.red = dots.red; VISION.yel = dots.yel; } catch(e){}
+    VISION.redHist.push(VISION.red); if (VISION.redHist.length > 2) VISION.redHist.shift();
+    reportLive();
+  }
   renderVision();
+}
+// ===== 내 위치와 주변 적 수 (실시간 보고) =====
+// 전체 미니맵에서 내 화살표는 노랑보다 조금 주황 쪽이고 밝다. 노랑 거점(색이 더 노람)과 신기 표식(채도가 더 높음)과 구분한다.
+function bestBlob(mask, w, h, min){
+  const seen = new Uint8Array(w * h); let best = null;
+  for (let i = 0; i < w * h; i++){
+    if (!mask[i] || seen[i]) continue;
+    let size = 0, sx = 0, sy = 0; const st = [i]; seen[i] = 1;
+    while (st.length){
+      const j = st.pop(), x = j % w, y = (j - x) / w; size++; sx += x; sy += y;
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const k = ny * w + nx;
+        if (mask[k] && !seen[k]){ seen[k] = 1; st.push(k); }
+      }
+    }
+    if (size >= min && (!best || size > best.size)) best = {x:sx / size / w, y:sy / size / h, size};
+  }
+  return best;
+}
+function countBlobs(mask, w, h, min){
+  const seen = new Uint8Array(w * h); let count = 0;
+  for (let i = 0; i < w * h; i++){
+    if (!mask[i] || seen[i]) continue;
+    let size = 0; const st = [i]; seen[i] = 1;
+    while (st.length){
+      const j = st.pop(), x = j % w, y = (j - x) / w; size++;
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const k = ny * w + nx;
+        if (mask[k] && !seen[k]){ seen[k] = 1; st.push(k); }
+      }
+    }
+    if (size >= min) count++;
+  }
+  return count;
+}
+function readArrow(){
+  const {width:w, height:h, data:d} = grab(VISION.cal.map), mask = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++){
+    const [hh, ss, vv] = rgb2hsv(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
+    if (hh >= 37 && hh <= 47 && ss > .27 && ss < .45 && vv > .84) mask[i] = 1;
+  }
+  return bestBlob(mask, w, h, Math.max(4, Math.round(w * h / 6500)));
+}
+// 한 번 튀는 오인식을 막기 위해, 멀리 떨어진 새 위치는 두 번 연속 보여야 받아들인다.
+function updatePos(c){
+  if (!c) return;
+  const p = VISION.pos, t = now();
+  if (p && t - VISION.posAt < 6000 && Math.hypot(c.x - p.x, c.y - p.y) < .08){ VISION.pos = c; VISION.posAt = t; VISION.cand = null; return; }
+  if (VISION.cand && Math.hypot(c.x - VISION.cand.x, c.y - VISION.cand.y) < .05){ VISION.pos = c; VISION.posAt = t; VISION.cand = null; }
+  else VISION.cand = c;
+}
+function readDots(){
+  const {width:w, height:h, data:d} = grab(VISION.cal.round);
+  const cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2;
+  const red = new Uint8Array(w * h), yel = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    const dist = Math.hypot(x - cx, y - cy);
+    if (dist < R * .3 || dist > R * .92) continue;
+    const i = (y * w + x) * 4, [hh, ss, vv] = rgb2hsv(d[i], d[i + 1], d[i + 2]);
+    if ((hh < 12 || hh > 340) && ss > .55 && vv > .59) red[y * w + x] = 1;
+    else if (hh >= 38 && hh <= 62 && ss > .47 && vv > .67) yel[y * w + x] = 1;
+  }
+  const min = Math.max(4, Math.round(w * h / 3300));
+  return {red:countBlobs(red, w, h, min), yel:countBlobs(yel, w, h, min)};
+}
+// 미니맵 비율 좌표를 작전판 개략도 좌표(0~400)로 바꾼다. 네 거점 아이콘 위치에 맞춰 구한 값이다.
+const toMap = p => ({x:Math.round(520.5 * p.x - 66.5), y:Math.round(522.75 * p.y - 59.25)});
+function reportLive(){
+  if (mode !== 'cmd' || !VISION.me || !VISION.pos || now() - VISION.posAt > 6000) return;
+  const t = now(), cur = (state.live || {})[VISION.me];
+  const n = VISION.redHist.length === 2 ? Math.min(...VISION.redHist) : 0;
+  const {x, y} = toMap(VISION.pos);
+  const changed = !cur || Math.hypot(x - cur.x, y - cur.y) > 4 || cur.n !== n;
+  if ((changed && t - VISION.lastLive > 1000) || t - VISION.lastLive > 4000){
+    VISION.lastLive = t;
+    commit({['live/' + VISION.me]:{x, y, n, at:t}});
+  }
+}
+// 실시간 보고 표시: 8초 동안 새 보고가 없으면 흐려지고 20초면 사라진다.
+let liveKey = '';
+function renderLive(){
+  const t = now(), tc = colorOf(state.ours), chars = Object.fromEntries(ROLES.map(([k, c]) => [k, c]));
+  const items = Object.entries(state.live || {}).filter(([, l]) => t - l.at < 20000);
+  const key = tc + items.map(([k, l]) => [k, l.x, l.y, l.n, t - l.at < 8000].join(',')).join('|');
+  if (key === liveKey) return;
+  liveKey = key;
+  $('#g-live').innerHTML = items.map(([k, l]) => {
+    const fresh = t - l.at < 8000;
+    return `<g transform='translate(${l.x},${l.y})' opacity='${fresh ? 1 : .4}'>
+      <circle r='13' fill='none' stroke='var(--map-ink)' stroke-width='2' ${fresh ? `class='wave'` : ''}/>
+      <circle r='9' fill='${tc}' stroke='var(--map-bg)' stroke-width='2'/>
+      <text class='live-t' fill='${inkOn(tc)}'>${chars[k] || '?'}</text>
+      ${l.n > 0 ? `<g transform='translate(15,-14)'><rect x='-14' y='-8' width='28' height='16' rx='8' fill='var(--danger)' stroke='var(--map-bg)' stroke-width='1.5'/><text class='live-n'>적${l.n}</text></g>` : ''}
+    </g>`;
+  }).join('');
 }
 function tickerStop(){
   if (VISION.worker){ VISION.worker.terminate(); VISION.worker = null; }
@@ -1030,7 +1149,7 @@ function tickerStart(){
     VISION.worker.postMessage(500);
   } catch(e){ tickerFallback(); }
 }
-function vReset(){ VISION.slotHist = []; VISION.stoneHist = []; VISION.centerHist = []; VISION.slots = null; VISION.stone = null; VISION.center = null; VISION.sugg = null; }
+function vReset(){ VISION.slotHist = []; VISION.stoneHist = []; VISION.centerHist = []; VISION.slots = null; VISION.stone = null; VISION.center = null; VISION.sugg = null; VISION.pos = null; VISION.cand = null; VISION.red = 0; VISION.yel = 0; VISION.redHist = []; }
 function vStopAll(){
   tickerStop();
   if (VISION.stream) VISION.stream.getTracks().forEach(t => t.stop());
@@ -1051,7 +1170,7 @@ function openCal(){
   cv.width = Math.round(W * sc); cv.height = Math.round(H * sc);
   ctx.drawImage(VISION.src, 0, 0, cv.width, cv.height);
   const frame = ctx.getImageData(0, 0, cv.width, cv.height);
-  const steps = [['map', '1/2 네모난 전체 미니맵을 테두리에 맞춰 끌어서 감싸 주세요.'], ['stone', '2/2 우측 패널의 점령석 상태 글자(점령 불가 등)만 감싸 주세요.']];
+  const steps = [['map', '1/3 네모난 전체 미니맵을 테두리에 맞춰 끌어서 감싸 주세요.'], ['stone', '2/3 우측 패널의 점령석 상태 글자(점령 불가 등)만 감싸 주세요.'], ['round', '3/3 왼쪽 위 원형 미니맵을 꼭 맞는 정사각형으로 감싸 주세요.']];
   let i = 0, st = null; const cal = {};
   const pos = e => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * cv.width / b.width, (e.clientY - b.top) * cv.height / b.height]; };
   const rect = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])];
@@ -1090,12 +1209,22 @@ function drawPreview(){
   for (const s of SLOTS){ c.beginPath(); c.arc(VISION.rel[s][0] * pw, VISION.rel[s][1] * ph, Math.max(3, pw * .035), 0, Math.PI * 2); c.stroke(); }
 }
 function renderVision(){
+  const meSel = $('#v-me');
+  if (meSel && document.activeElement !== meSel){
+    const o = `<option value=''>내 위치 보고 안 함</option>` + ROLES.map(([k, , n]) => `<option value='${k}' ${VISION.me === k ? 'selected' : ''}>나는 ${n}</option>`).join('');
+    if (VISION.html.me !== o){ VISION.html.me = o; meSel.innerHTML = o; }
+  }
   const on = !!VISION.src;
   let h = '<div>상태: ' + (!on ? '꺼짐' : isVideo() ? '게임 화면 연결됨' : '스크린샷 시험 중') + (on && !VISION.cal ? ', 영역 지정 필요' : '') + '</div>';
   if (on && VISION.cal){
     h += '<div>점령석: ' + (VISION.stone ? (VISION.stone === 'locked' ? '점령 불가' : '점령 가능') : '읽는 중') + '</div>';
     h += '<div>중앙 아이콘: ' + (VISION.center ? (VISION.center === 'off' ? '비어 있음' : COLORS[VISION.center].n) : '읽는 중') + '</div>';
     h += '<div>거점 색: ' + (VISION.slots ? vSlotText(VISION.slots) : '읽는 중') + '</div>';
+    if (!VISION.cal.round) h += `<div style='color:var(--danger)'>원형 미니맵 영역이 없어 내 위치와 주변 적을 못 읽습니다. 영역 다시 지정을 눌러 주세요.</div>`;
+    else {
+      h += '<div>내 위치: ' + (VISION.pos && now() - VISION.posAt < 6000 ? '감지됨' : '화살표를 찾는 중') + ', 주변 적 ' + VISION.red + ', 아군 ' + VISION.yel + '</div>';
+      if (!VISION.me) h += `<div style='color:var(--muted)'>위에서 내 조를 고르면 지도에 실시간으로 올라갑니다.</div>`;
+    }
   }
   setHtml('vision-read', h);
   // 화면에서 읽은 상태와 작전판 상태가 어긋날 때만 제안한다. 무시한 제안은 상황이 바뀔 때까지 다시 띄우지 않는다.
@@ -1167,7 +1296,14 @@ if (EMBEDDED) document.documentElement.classList.add('embedded');
 if (FIREBASE_CONFIG && !EMBEDDED){ const nav = $('#nav'); nav.hidden = false; nav.href = 'nakwa.html#' + ROOM; }
 buildSetup(); buildTokens(); render();
 if (FIREBASE_CONFIG) initFirebase(); else setSync('local', '데모 모드: 이 브라우저에만 저장');
-setInterval(() => { renderClock(); renderBanner(); renderPings(); }, 250);
+setInterval(() => { renderClock(); renderBanner(); renderPings(); renderLive(); }, 250);
+try { VISION.me = localStorage.getItem('sgj-me') || ''; } catch(e){}
+$('#v-me').addEventListener('change', e => {
+  VISION.me = e.target.value;
+  try { localStorage.setItem('sgj-me', VISION.me); } catch(err){}
+  renderVision();
+});
+renderVision();
 window.addEventListener('hashchange', () => location.reload());
 })();
 </script>
