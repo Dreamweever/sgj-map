@@ -186,9 +186,20 @@ body[data-mode="cmd"] .view-only{display:none !important}
 .pip-banner[data-level="danger"]{background:#C2332A;color:#fff}
 .pip-banner[data-level="manual"]{background:#E9C75E;color:#14201F}
 .pip-map{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:4px}
-.pip-map svg{width:100%;height:100%}
+.pip-map svg{width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-select:none}
 .pip-map > .grid{width:min(100%, calc(100vh - 70px))}
 .pip-map .cell{cursor:default !important}
+.pip-chs,.pip-bar{display:flex;gap:4px;padding:4px 8px;background:#162428;border-top:1px solid #2A3C42;flex-wrap:wrap;align-items:center}
+.pip-chs{border-top:0;border-bottom:1px solid #2A3C42}
+.pip-btn{font:600 11px "IBM Plex Sans KR",system-ui,sans-serif;border:1px solid #3E545B;background:#213338;color:#E2EBE9;border-radius:7px;padding:4px 8px;cursor:pointer;line-height:1.2}
+.pip-btn[aria-pressed="true"]{background:#E9C75E;color:#14201F;border-color:#E9C75E}
+.pip-btn.sv-a{border-left:4px solid var(--ca,#E3C443)}
+.pip-btn.sv-b{border-left:4px solid var(--cb,#E8793A)}
+.pip-hint{margin-left:auto;font-size:11px;opacity:.75}
+.pipbody[data-mode="view"] .pip-bar{display:none}
+.pipbody[data-mode="cmd"] .pip-map svg[data-tool]:not([data-tool="view"]){cursor:crosshair}
+.pipbody[data-mode="cmd"] .pip-map svg[data-tool="erase"] [data-path]{pointer-events:auto !important;cursor:pointer}
+.pipbody[data-mode="cmd"] .pip-map svg[data-tool^="sight"] [data-path*="/sights/"]{pointer-events:auto !important;cursor:pointer}
 #toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:.88rem;max-width:90vw;
   opacity:0;pointer-events:none;transition:opacity .2s}
@@ -484,8 +495,14 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const svName = s => s === 'x' ? '서버 미상' : (state.servers[s] || s);
 const mapH = () => Math.round(1000 * curMap().h / curMap().w);
-const partyList = () => Object.entries(state.parties || {}).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+// 자동 감지로 붙은 교전 표시는 적이 안 보인 지 20초가 지나면 원래 상태로 보인다(보고하던 파티장 화면이 꺼져 있어도).
+const AUTO_FIGHT_MS = 20000;
+const effParty = p => (p.st === 'fight' && p.auto && now() - (p.fightAt || 0) > AUTO_FIGHT_MS) ? {...p, st:p.prev || 'hunt'} : p;
+const partyList = () => Object.entries(state.parties || {}).map(([id, p]) => [id, effParty(p)]).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
 const live = (obj, ms) => Object.entries(obj || {}).filter(([, v]) => now() - v.at < ms);
+// 적 출몰 표시 수명: 직접 찍은 것은 10분, 화면 인식으로 찍힌 것은 마지막 감지 후 20초
+const sightLife = s => s.auto ? 20000 : SIGHT_MS;
+const liveSights = obj => Object.entries(obj || {}).filter(([, v]) => now() - v.at < sightLife(v));
 const mins = ms => Math.max(0, Math.floor(ms / 60000));
 
 /* ===== 보스 시계 (한국 시각 22:00) ===== */
@@ -519,8 +536,8 @@ const act = {
   },
   pst(arg){
     const [id, s] = arg.split(':'), p = state.parties[id];
-    if (!p || p.st === s) return;
-    commit({['parties/' + id + '/st']:s, ...L(p.name + ' ' + PST_NAME[s] + (s === 'fight' ? ' (' + CH_NAME[p.ch] + ')' : ''))});
+    if (!p || (effParty(p).st === s && !p.auto)) return;
+    commit({['parties/' + id + '/st']:s, ['parties/' + id + '/auto']:null, ['parties/' + id + '/fightAt']:null, ...L(p.name + ' ' + PST_NAME[s] + (s === 'fight' ? ' (' + CH_NAME[p.ch] + ')' : ''))});
   },
   addParty(){
     const list = partyList(), n = list.length + 1;
@@ -662,14 +679,14 @@ function renderMap(){
   $('#g-arrows').innerHTML = Object.entries(ch.arrows || {}).map(([id, a]) => arrowSvg(a, `ch/${viewCh}/arrows/${id}`)).join('');
 
   // 적 출몰 (채널별, 10분 동안 점점 흐려짐)
-  $('#g-sights').innerHTML = live(ch.sights, SIGHT_MS).map(([id, s]) => {
+  $('#g-sights').innerHTML = liveSights(ch.sights).map(([id, s]) => {
     const age = now() - s.at, c = SV_COLOR[s.sv], r = s.big ? 46 : 28;
-    const op = 1 - .65 * age / SIGHT_MS, fresh = age < 60000;
+    const op = 1 - .65 * age / sightLife(s), fresh = age < (s.auto ? 5000 : 60000);
     return `<g data-path="ch/${viewCh}/sights/${id}" opacity="${op.toFixed(2)}">
       ${fresh ? `<circle class="wave" cx="${s.x}" cy="${s.y}" r="${r}" fill="none" stroke="${c}" stroke-width="5"/>` : ''}
       <circle cx="${s.x}" cy="${s.y}" r="${r}" fill="${c}" fill-opacity=".5" stroke="#fff" stroke-width="4"/>
       <text x="${s.x}" y="${s.y + 8}" class="lbl" style="fill:#fff">${s.sv === 'a' ? 'A' : s.sv === 'b' ? 'B' : '?'}${s.big ? '+' : ''}</text>
-      <text x="${s.x}" y="${s.y + r + 20}" class="lbl small">${fresh ? '방금' : mins(age) + '분 전'}</text></g>`;
+      <text x="${s.x}" y="${s.y + r + 20}" class="lbl small">${s.auto ? '적 ' + (s.n || '') + '명' : fresh ? '방금' : mins(age) + '분 전'}</text></g>`;
   }).join('');
 
   renderPings();
@@ -778,7 +795,7 @@ svg.addEventListener('pointercancel', endDrag);
 function renderTabs(){
   $('#chtabs').innerHTML = CHS.map(c => {
     const nP = partyList().filter(([, p]) => p.ch === c).length;
-    const nS = live(((state.ch || {})[c] || {}).sights, SIGHT_MS).length;
+    const nS = liveSights(((state.ch || {})[c] || {}).sights).length;
     const extra = (nP ? '파티 ' + nP : '') + (nS ? (nP ? ', ' : '') + '적 ' + nS : '');
     return `<button type="button" class="btn" data-act="ch" data-arg="${c}" aria-pressed="${viewCh === c}">${CH_NAME[c]}${extra ? `<span class="cnt">${extra}</span>` : ''}</button>`;
   }).join('');
@@ -850,7 +867,7 @@ function renderHeadline(){
   const ch = (state.ch || {})[viewCh] || emptyCh();
   const ps = partyList().filter(([, p]) => p.ch === viewCh);
   const fights = ps.filter(([, p]) => p.st === 'fight').length;
-  const sights = live(ch.sights, SIGHT_MS);
+  const sights = liveSights(ch.sights);
   const nA = sights.filter(([, s]) => s.sv === 'a').length, nB = sights.filter(([, s]) => s.sv === 'b').length, nX = sights.length - nA - nB;
   $('#headline').textContent = CH_NAME[viewCh] + (fights ? ': 교전 중인 파티 ' + fights + '개' : ps.length ? ': 우리 파티 ' + ps.length + '개' : ': 우리 파티 없음');
   $('#subline').textContent = sights.length
@@ -871,7 +888,7 @@ function bannerInfo(){
   if (b.status === 'wait' && d > 0 && d <= 10 * 60e3)
     return {level:'info', stripe:'var(--gold)', text:'요화선녀 출현 ' + Math.max(1, Math.ceil(d / 60e3)) + '분 전. ' + (viewCh !== 'c1' ? '1채널로 이동하세요.' : b.rally ? '보스 집결 지점으로 모이세요.' : '집결 준비하세요.')};
   const ch = (state.ch || {})[viewCh] || emptyCh();
-  const bigNew = live(ch.sights, 2 * 60e3).filter(([, s]) => s.big).sort((x, y) => y[1].at - x[1].at)[0];
+  const bigNew = liveSights(ch.sights).filter(([, s]) => s.big && now() - s.at < 2 * 60e3).sort((x, y) => y[1].at - x[1].at)[0];
   if (bigNew) return {level:'danger', text:CH_NAME[viewCh] + '에 ' + svName(bigNew[1].sv) + ' 대규모 출몰. 지도를 확인하세요.'};
   return null;
 }
@@ -1040,15 +1057,33 @@ function report(){
   }
   const n = VISION.redHist.length === 2 ? Math.min(...VISION.redHist) : 0;
   if (n >= 2 && here){
-    if (t - VISION.lastSight.at > 30000 || n >= VISION.lastSight.n + 3){
-      u['ch/' + p.ch + '/sights/' + uid()] = {x:here.x, y:here.y, sv:'x', big:n >= 5, at:t, auto:true};
-      VISION.lastSight = {at:t, n};
-      Object.assign(u, L(p.name + ' 주변 적 ' + n + '명 감지 (' + CH_NAME[p.ch] + ')'));
+    // 파티마다 자동 표시는 하나만 두고, 적이 보이는 동안 위치와 인원을 갱신한다. 적이 사라지면 20초 뒤 지도에서 사라진다.
+    const key = 'ch/' + p.ch + '/sights/auto-' + myParty;
+    const cur = (((state.ch || {})[p.ch] || {}).sights || {})['auto-' + myParty];
+    const alive = cur && t - cur.at < 20000;
+    if (!alive || t - cur.at > 5000 || Math.hypot(here.x - cur.x, here.y - cur.y) > 30 || Math.abs((cur.n || 0) - n) >= 2){
+      u[key] = {x:here.x, y:here.y, sv:alive ? (cur.sv || 'x') : 'x', big:n >= 5, n, at:t, auto:true};
+      if (!alive || n >= (VISION.lastSight.n || 0) + 3){
+        VISION.lastSight = {at:t, n};
+        Object.assign(u, L(p.name + ' 주변 적 ' + n + '명 감지 (' + CH_NAME[p.ch] + ')'));
+      }
     }
-    if (VISION.autoFight && n >= 3 && p.st !== 'fight'){
-      u['parties/' + myParty + '/st'] = 'fight';
-      Object.assign(u, L(p.name + ' 교전 (자동 감지)'));
+    if (VISION.autoFight && n >= 3){
+      const base = 'parties/' + myParty + '/';
+      if (effParty(p).st !== 'fight'){
+        // 자동 교전 표시: 원래 상태를 기억해 두었다가 20초 뒤 되돌린다
+        u[base + 'st'] = 'fight'; u[base + 'auto'] = true; u[base + 'fightAt'] = t;
+        u[base + 'prev'] = p.st === 'fight' ? (p.prev || 'hunt') : (p.st || 'hunt');
+        Object.assign(u, L(p.name + ' 교전 (자동 감지)'));
+      } else if (p.auto && t - (p.fightAt || 0) > 5000){
+        u[base + 'fightAt'] = t; // 적이 계속 보이면 표시 시간을 늘린다
+      }
     }
+  }
+  // 적이 사라진 뒤 20초가 지나면 자동 교전 표시를 걸어 둔다
+  if (p.st === 'fight' && p.auto && t - (p.fightAt || 0) > AUTO_FIGHT_MS){
+    const base = 'parties/' + myParty + '/';
+    u[base + 'st'] = p.prev || 'hunt'; u[base + 'auto'] = null; u[base + 'fightAt'] = null;
   }
   if (Object.keys(u).length) commit(u);
 }
@@ -1386,37 +1421,127 @@ document.addEventListener('keydown', e => {
 });
 
 /* ===== 지도 띄우기 (항상 위 작은 창) ===== */
-// 크롬·엣지의 문서 PiP 창에 지도와 시계, 경보를 복사해 띄운다. 이 창은 다른 프로그램 위에 항상 떠 있다.
-// 읽기 전용이며 0.5초마다 작전판 내용을 따라간다. 통합 작전판 안에서는 맨 바깥 창의 기능을 빌려 쓴다.
-const PIP = {win:null, last:''};
+// 크롬·엣지의 문서 PiP 창에 지도와 시계, 경보를 띄우고, 지휘 모드에서는 적 출몰·집결 표시·화살표·채널 전환을 바로 조작한다.
+const PIP = {win:null, last:'', tool:'ping', big:false, chKey:'', barKey:'', drag:null};
+const PIP_TOOLS = [['view','보기'],['ping','집결'],['sightA','적 A'],['sightB','적 B'],['arrow','화살표'],['erase','지우개']];
 function pipApi(){
   try { if (window.top && window.top.documentPictureInPicture) return window.top.documentPictureInPicture; } catch(e){}
   return window.documentPictureInPicture;
 }
 const pipSource = () => document.querySelector('.mapbox') || document.querySelector('.gridwrap');
+function pipSvgPt(svgEl, e){
+  const p = svgEl.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
+  const ctm = svgEl.getScreenCTM();
+  if (!ctm) return {x:500, y:Math.round(mapH() / 2)};
+  const q = p.matrixTransform(ctm.inverse());
+  return {x:Math.round(Math.max(8, Math.min(992, q.x))), y:Math.round(Math.max(8, Math.min(mapH() - 8, q.y)))};
+}
+function bindPipEvents(win){
+  const d = win.document;
+  d.addEventListener('click', e => {
+    const btn = e.target.closest('[data-pip-act]');
+    if (!btn) return;
+    const a = btn.dataset.pipAct, arg = btn.dataset.arg;
+    if (a === 'ch'){ act.ch(arg); PIP.last = ''; syncPip(); }
+    else if (a === 'tool'){ PIP.tool = arg; PIP.barKey = ''; syncPip(); }
+    else if (a === 'big'){ PIP.big = !PIP.big; PIP.barKey = ''; syncPip(); }
+  });
+  const box = d.querySelector('.pip-map');
+  box.addEventListener('pointerdown', e => {
+    if (mode !== 'cmd' || PIP.tool === 'view') return;
+    const svgEl = box.querySelector('svg'); if (!svgEl) return;
+    const p = pipSvgPt(svgEl, e), base = 'ch/' + viewCh + '/';
+    if (PIP.tool === 'ping'){
+      commit({[base + 'pings/' + uid()]:{x:p.x, y:p.y, at:now()}, ...L(CH_NAME[viewCh] + ' 집결 표시')});
+      PIP.last = ''; syncPip();
+    } else if (PIP.tool === 'sightA' || PIP.tool === 'sightB'){
+      const sv = PIP.tool === 'sightA' ? 'a' : 'b';
+      const hitS = e.target.closest('[data-path*="/sights/"]');
+      if (hitS){
+        commit({[hitS.dataset.path + '/sv']:sv, ...L('적 출몰 표시를 ' + svName(sv) + '로 지정')});
+      } else {
+        commit({[base + 'sights/' + uid()]:{x:p.x, y:p.y, sv, big:PIP.big, at:now()},
+                ...L(CH_NAME[viewCh] + ' ' + svName(sv) + (PIP.big ? ' 대규모' : '') + ' 출몰')});
+      }
+      PIP.last = ''; syncPip();
+    } else if (PIP.tool === 'arrow'){
+      PIP.drag = {k:'arrow', x1:p.x, y1:p.y, x2:p.x, y2:p.y};
+      svgEl.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    } else if (PIP.tool === 'erase'){
+      const hit = e.target.closest('[data-path]');
+      if (hit){ commit({[hit.dataset.path]:null}); PIP.last = ''; syncPip(); }
+    }
+  });
+  box.addEventListener('pointermove', e => {
+    if (!PIP.drag) return;
+    const svgEl = box.querySelector('svg'); if (!svgEl) return;
+    const p = pipSvgPt(svgEl, e);
+    PIP.drag.x2 = p.x; PIP.drag.y2 = p.y;
+    const tmp = svgEl.querySelector('#g-temp');
+    if (tmp) tmp.innerHTML = arrowSvg(PIP.drag);
+  });
+  const endPipDrag = () => {
+    if (!PIP.drag) return;
+    const dg = PIP.drag; PIP.drag = null;
+    const tmp = box.querySelector('#g-temp'); if (tmp) tmp.innerHTML = '';
+    if (Math.hypot(dg.x2 - dg.x1, dg.y2 - dg.y1) > 30){
+      commit({['ch/' + viewCh + '/arrows/' + uid()]:{x1:dg.x1, y1:dg.y1, x2:dg.x2, y2:dg.y2, k:'arrow'}});
+      PIP.last = ''; syncPip();
+    }
+  };
+  box.addEventListener('pointerup', endPipDrag);
+  box.addEventListener('pointercancel', endPipDrag);
+}
 async function openPip(){
   if (PIP.win){ PIP.win.close(); return; }
   const api = pipApi();
   if (!api){ toast('이 브라우저는 지도 띄우기를 지원하지 않습니다. PC의 크롬이나 엣지 최신 버전에서 열어 주세요.'); return; }
   const src = pipSource(), r = src.getBoundingClientRect();
-  const w = 440, h = Math.round(w * r.height / Math.max(1, r.width)) + 60;
+  const w = 460, h = Math.round(w * r.height / Math.max(1, r.width)) + 128;
   let win;
   try { win = await api.requestWindow({width:w, height:h}); }
   catch(e){ toast('지도 창을 열지 못했습니다. 버튼을 다시 눌러 주세요.'); return; }
-  PIP.win = win; PIP.last = '';
+  PIP.win = win; PIP.last = ''; PIP.chKey = ''; PIP.barKey = ''; PIP.drag = null;
   for (const st of document.querySelectorAll('style, link[rel="stylesheet"]')) win.document.head.appendChild(st.cloneNode(true));
   win.document.title = document.title;
   win.document.body.className = 'pipbody';
-  win.document.body.dataset.mode = 'view';
-  win.document.body.innerHTML = `<div class='pip'><div class='pip-top'><span class='pip-clock'></span><span class='pip-sub'></span><span class='pip-head'></span></div><div class='pip-banner' hidden></div><div class='pip-map'></div></div>`;
-  win.addEventListener('pagehide', () => { PIP.win = null; renderPipBtn(); });
+  win.document.body.dataset.mode = mode;
+  win.document.body.innerHTML = `<div class='pip'><div class='pip-top'><span class='pip-clock'></span><span class='pip-sub'></span><span class='pip-head'></span></div><div class='pip-banner' hidden></div><div class='pip-chs'></div><div class='pip-map'></div><div class='pip-bar'></div></div>`;
+  bindPipEvents(win);
+  win.addEventListener('pagehide', () => { PIP.win = null; PIP.drag = null; renderPipBtn(); });
   renderPipBtn(); syncPip();
 }
 function syncPip(){
   if (!PIP.win) return;
   const d = PIP.win.document, src = pipSource(); if (!src) return;
+  d.body.dataset.mode = mode;
   const html = src.innerHTML;
-  if (html !== PIP.last){ PIP.last = html; d.querySelector('.pip-map').innerHTML = html; }
+  if (html !== PIP.last && !PIP.drag){
+    PIP.last = html;
+    d.querySelector('.pip-map').innerHTML = html;
+  }
+  const svgEl = d.querySelector('.pip-map svg');
+  if (svgEl) svgEl.dataset.tool = mode === 'cmd' ? PIP.tool : 'view';
+  const chKey = viewCh + ':' + CHS.map(c => partyList().filter(([, p]) => p.ch === c).length + '/' + liveSights(((state.ch || {})[c] || {}).sights).length).join(',');
+  if (chKey !== PIP.chKey){
+    PIP.chKey = chKey;
+    d.querySelector('.pip-chs').innerHTML = CHS.map(c => {
+      const nS = liveSights(((state.ch || {})[c] || {}).sights).length;
+      return `<button type="button" class="pip-btn" data-pip-act="ch" data-arg="${c}" aria-pressed="${viewCh === c}">${CH_NAME[c]}${nS ? ' (' + nS + ')' : ''}</button>`;
+    }).join('');
+  }
+  const barKey = mode + ':' + PIP.tool + ':' + PIP.big + ':' + SV_COLOR.a + ':' + SV_COLOR.b;
+  if (barKey !== PIP.barKey){
+    PIP.barKey = barKey;
+    const bar = d.querySelector('.pip-bar');
+    bar.style.setProperty('--ca', SV_COLOR.a);
+    bar.style.setProperty('--cb', SV_COLOR.b);
+    let h = PIP_TOOLS.map(([k, n]) => `<button type="button" class="pip-btn ${k === 'sightA' ? 'sv-a' : k === 'sightB' ? 'sv-b' : ''}" data-pip-act="tool" data-arg="${k}" aria-pressed="${PIP.tool === k}">${n}</button>`).join('');
+    if (PIP.tool === 'sightA' || PIP.tool === 'sightB')
+      h += `<button type="button" class="pip-btn" data-pip-act="big" aria-pressed="${PIP.big}">대규모</button>`;
+    bar.innerHTML = h;
+  }
   const head = document.querySelector('#headline') || document.querySelector('#relic-text');
   d.querySelector('.pip-clock').textContent = (document.querySelector('#clock') || {}).textContent || '';
   d.querySelector('.pip-sub').textContent = (document.querySelector('#clock-sub') || {}).textContent || '';
@@ -1445,7 +1570,7 @@ if (FIREBASE_CONFIG) initFirebase(); else setSync('local', '데모 모드: 이 �
 let lastSlow = 0;
 setInterval(() => {
   renderClock(); renderBanner(); renderPings();
-  if (now() - lastSlow > 15000){ lastSlow = now(); renderMap(); renderTabs(); renderHeadline(); }
+  if (now() - lastSlow > 2000){ lastSlow = now(); if (!drag) renderMap(); renderTabs(); renderHeadline(); renderParties(); }
 }, 500);
 window.addEventListener('hashchange', () => location.reload());
 })();
